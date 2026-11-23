@@ -18,6 +18,7 @@ import {
   reasonLabel,
 } from '../copy'
 import { formatDate, formatDateShort, num, pct, usd, usdPrecise } from '../format'
+import { strategyLabel } from '../strategyMeta'
 import type { BacktestResponse, TradeReason } from '../types'
 
 export function ResultsPage() {
@@ -109,7 +110,7 @@ export function ResultsPage() {
         <div>
           <h1>Results</h1>
           <p>
-            Buy &amp; hold · {result.request.symbols.join(', ')} ·{' '}
+            {strategyLabel(result.request.strategy.type)} · {result.request.symbols.join(', ')} ·{' '}
             {formatDate(result.request.start_date)} → {formatDate(result.request.end_date)}
           </p>
         </div>

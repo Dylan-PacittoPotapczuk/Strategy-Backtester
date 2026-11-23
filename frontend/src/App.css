@@ -277,6 +277,89 @@ input:focus {
   padding: 0.45rem 0.7rem;
 }
 
+.strategy-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.strategy-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--input);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+  flex-direction: row;
+}
+
+.strategy-option input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.strategy-option.selected {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent-ink);
+}
+
+.strategy-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.strategy-params {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--line);
+}
+
+.params-title {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--input);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.compare-results {
+  margin-top: 2rem;
+  animation: rise 420ms ease-out both;
+}
+
+.th-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 0.15rem;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
 .hint {
   margin: 0.55rem 0 0;
   color: var(--muted);

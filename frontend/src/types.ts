@@ -10,6 +10,8 @@ export type TradeReason =
   | 'rejected_cash'
   | 'end_of_backtest'
 
+export type StrategyType = 'buy_and_hold' | 'momentum' | 'mean_reversion'
+
 export interface CostConfig {
   slippage_bps: number
   commission_per_trade: number
@@ -24,7 +26,7 @@ export interface GuardrailConfig {
 }
 
 export interface StrategyConfig {
-  type: 'buy_and_hold'
+  type: StrategyType
   params: Record<string, unknown>
   symbols: string[]
 }
@@ -36,6 +38,17 @@ export interface BacktestRequest {
   initial_cash: number
   currency: 'USD'
   strategy: StrategyConfig
+  guardrails: GuardrailConfig
+  costs: CostConfig
+}
+
+export interface CompareRequest {
+  symbols: string[]
+  start_date: string
+  end_date: string
+  initial_cash: number
+  currency: 'USD'
+  strategies: StrategyConfig[]
   guardrails: GuardrailConfig
   costs: CostConfig
 }
@@ -87,4 +100,8 @@ export interface BacktestResponse {
   error?: string | null
   dd_halted: boolean
   dd_halt_date?: string | null
+}
+
+export interface CompareResponse {
+  runs: BacktestResponse[]
 }

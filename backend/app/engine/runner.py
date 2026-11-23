@@ -62,9 +62,14 @@ class BacktestRunner:
 
             # --- 1) Fill pending signals at today's open ---
             if pending is not None:
-                orders, info = risk.size_entries(
-                    portfolio, pending.targets, opens, day
-                )
+                if pending.rebalance:
+                    orders, info = risk.rebalance_to_targets(
+                        portfolio, pending.targets, opens, day
+                    )
+                else:
+                    orders, info = risk.size_entries(
+                        portfolio, pending.targets, opens, day
+                    )
                 trades.extend(info)
                 for order in orders:
                     px = opens.get(order.symbol)

@@ -129,6 +129,165 @@ class RiskEngine:
 
         return orders, info_trades
 
+    def rebalance_to_targets(
+        self,
+        portfolio: Portfolio,
+        targets: list[TargetWeight],
+        fill_prices: dict[str, float],
+        ts: date,
+    ) -> tuple[list[OrderIntent], list[Trade]]:
+        """
+        Full rebalance: sell names with weight 0 / missing, then buy/adjust toward
+        target weights. Sells always allowed; new buys blocked when DD-halted.
+        Orders are ordered sells-first so cash is available for subsequent buys
+        when the runner executes sequentially.
+        """
+        info_trades: list[Trade] = []
+        sell_orders: list[OrderIntent] = []
+        buy_orders: list[OrderIntent] = []
+
+        target_map = {t.symbol.upper(): float(t.weight) for t in targets}
+        # Treat held names absent from targets as full exits
+        for sym in list(portfolio.positions.keys()):
+            target_map.setdefault(sym, 0.0)
+
+        equity = portfolio.equity(fill_prices)
+
+        # --- Sells / trim first ---
+        for sym, weight in target_map.items():
+            px = fill_prices.get(sym)
+            pos = portfolio.positions.get(sym)
+            if px is None or px <= 0 or not pos:
+                continue
+            if weight <= 0:
+                sell_orders.append(
+                    OrderIntent(
+                        symbol=sym,
+                        side=TradeSide.SELL,
+                        qty=pos.qty,
+                        reason=TradeReason.REBALANCE,
+                        note="Exited: no longer in target set",
+                    )
+                )
+                continue
+            target_notional = min(weight * equity, self.g.max_position_pct * equity)
+            target_qty = target_notional / px
+            if pos.qty > target_qty * 1.01:  # 1% band to avoid churn
+                sell_orders.append(
+                    OrderIntent(
+                        symbol=sym,
+                        side=TradeSide.SELL,
+                        qty=pos.qty - target_qty,
+                        reason=TradeReason.REBALANCE,
+                        note="Trimmed toward target weight",
+                    )
+                )
+
+        # --- Buys / adds (blocked on DD halt) ---
+        if portfolio.dd_halted:
+            for sym, weight in target_map.items():
+                if weight <= 0:
+                    continue
+                pos = portfolio.positions.get(sym)
+                px = fill_prices.get(sym)
+                if px is None or px <= 0:
+                    continue
+                target_notional = min(weight * equity, self.g.max_position_pct * equity)
+                target_qty = target_notional / px
+                current_qty = pos.qty if pos else 0.0
+                if target_qty > current_qty * 1.01:
+                    info_trades.append(
+                        Trade(
+                            symbol=sym,
+                            side=TradeSide.BUY,
+                            qty=0,
+                            price=px,
+                            ts=ts,
+                            reason=TradeReason.REJECTED_DD,
+                            note="New risk rejected: portfolio drawdown halt active",
+                        )
+                    )
+            return sell_orders + buy_orders, info_trades
+
+        # Estimate cash after sells for scaling buys
+        est_cash = portfolio.cash
+        for order in sell_orders:
+            px = fill_prices.get(order.symbol)
+            if px is None:
+                continue
+            fill_px = self.apply_slippage(px, TradeSide.SELL)
+            est_cash += order.qty * fill_px - self.costs.commission_per_trade
+
+        desired: list[tuple[str, float, float]] = []  # sym, notional_to_buy, raw_px
+        for sym, weight in target_map.items():
+            if weight <= 0:
+                continue
+            px = fill_prices.get(sym)
+            if px is None or px <= 0:
+                continue
+            raw_notional = weight * equity
+            capped = min(raw_notional, self.g.max_position_pct * equity)
+            if capped < raw_notional - 1e-9:
+                info_trades.append(
+                    Trade(
+                        symbol=sym,
+                        side=TradeSide.BUY,
+                        qty=0,
+                        price=px,
+                        ts=ts,
+                        reason=TradeReason.SIZED_DOWN,
+                        note=(
+                            f"Target notional {raw_notional:.2f} capped to "
+                            f"{capped:.2f} by max_position_pct={self.g.max_position_pct}"
+                        ),
+                    )
+                )
+            target_qty = capped / px
+            current_qty = portfolio.positions[sym].qty if sym in portfolio.positions else 0.0
+            # Account for pending trim on this symbol
+            for so in sell_orders:
+                if so.symbol == sym:
+                    current_qty -= so.qty
+            need_qty = target_qty - current_qty
+            if need_qty * px <= max(1.0, 0.01 * equity):  # ignore tiny dust
+                continue
+            desired.append((sym, need_qty * px, px))
+
+        total_needed = sum(n for _, n, _ in desired)
+        scale = 1.0
+        if total_needed > est_cash and total_needed > 0:
+            scale = max(0.0, est_cash / total_needed)
+            info_trades.append(
+                Trade(
+                    symbol="PORTFOLIO",
+                    side=TradeSide.BUY,
+                    qty=0,
+                    price=0,
+                    ts=ts,
+                    reason=TradeReason.REJECTED_CASH,
+                    note=f"Scaled all entries by {scale:.4f} due to insufficient cash",
+                )
+            )
+
+        for sym, notional, px in desired:
+            fill_px = self.apply_slippage(px, TradeSide.BUY)
+            spend = notional * scale
+            spend_avail = max(0.0, spend - self.costs.commission_per_trade)
+            qty = spend_avail / fill_px if fill_px > 0 else 0
+            if qty <= 0:
+                continue
+            buy_orders.append(
+                OrderIntent(
+                    symbol=sym,
+                    side=TradeSide.BUY,
+                    qty=qty,
+                    reason=TradeReason.REBALANCE,
+                    note="Added toward target weight",
+                )
+            )
+
+        return sell_orders + buy_orders, info_trades
+
     def check_stops(
         self,
         portfolio: Portfolio,

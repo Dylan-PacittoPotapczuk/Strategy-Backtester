@@ -1,4 +1,5 @@
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { ComparePage } from './pages/ComparePage'
 import { ConfigurePage } from './pages/ConfigurePage'
 import { ResultsPage } from './pages/ResultsPage'
 import './App.css'
@@ -12,24 +13,25 @@ export default function App() {
             <span className="brand-mark" aria-hidden />
             <div>
               <div className="brand-name">Strategy Backtester</div>
-              <div className="brand-sub">Historical test with risk limits · Phase A</div>
+              <div className="brand-sub">Historical test with risk limits · Phase B</div>
             </div>
           </div>
           <nav>
             <NavLink to="/" end>
               Configure
             </NavLink>
-            <span className="nav-muted">Compare (Phase B)</span>
+            <NavLink to="/compare">Compare</NavLink>
           </nav>
         </header>
         <main>
           <Routes>
             <Route path="/" element={<ConfigurePage />} />
             <Route path="/results/:runId" element={<ResultsPage />} />
+            <Route path="/compare" element={<ComparePage />} />
           </Routes>
         </main>
         <footer className="foot">
-          Stocks &amp; ETFs only · priced at next day’s open · free end-of-day data · USD
+          Stocks &amp; ETFs only · priced at next day’s open · free end-of-day data · USD · long-only
         </footer>
       </div>
     </BrowserRouter>
