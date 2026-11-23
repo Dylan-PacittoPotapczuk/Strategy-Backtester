@@ -65,7 +65,7 @@ class GuardrailConfig(BaseModel):
 
 
 class StrategyConfig(BaseModel):
-    type: Literal["buy_and_hold"] = "buy_and_hold"
+    type: Literal["buy_and_hold", "momentum", "mean_reversion"] = "buy_and_hold"
     params: dict[str, Any] = Field(default_factory=dict)
     symbols: list[str] = Field(min_length=1)
 
@@ -78,14 +78,49 @@ class StrategyConfig(BaseModel):
         return out
 
     @model_validator(mode="after")
-    def validate_weights(self) -> StrategyConfig:
-        weights = self.params.get("weights")
-        if weights is not None:
-            if set(weights.keys()) != set(self.symbols):
-                raise ValueError("weights keys must match symbols exactly")
-            total = sum(float(w) for w in weights.values())
-            if abs(total - 1.0) > 1e-6:
-                raise ValueError(f"weights must sum to 1.0, got {total}")
+    def validate_params(self) -> StrategyConfig:
+        if self.type == "buy_and_hold":
+            weights = self.params.get("weights")
+            if weights is not None:
+                if set(weights.keys()) != set(self.symbols):
+                    raise ValueError("weights keys must match symbols exactly")
+                total = sum(float(w) for w in weights.values())
+                if abs(total - 1.0) > 1e-6:
+                    raise ValueError(f"weights must sum to 1.0, got {total}")
+        elif self.type == "momentum":
+            lookback = int(self.params.get("lookback", 63))
+            top_n = int(self.params.get("top_n", 2))
+            rebalance_days = int(self.params.get("rebalance_days", 21))
+            skip_recent = int(self.params.get("skip_recent_days", 0))
+            weighting = self.params.get("weighting", "equal")
+            if lookback < 1:
+                raise ValueError("lookback must be >= 1")
+            if top_n < 1:
+                raise ValueError("top_n must be >= 1")
+            if rebalance_days < 1:
+                raise ValueError("rebalance_days must be >= 1")
+            if skip_recent < 0:
+                raise ValueError("skip_recent_days must be >= 0")
+            if weighting not in ("equal", "score"):
+                raise ValueError("weighting must be 'equal' or 'score'")
+        elif self.type == "mean_reversion":
+            window = int(self.params.get("window", 20))
+            entry_z = float(self.params.get("entry_z", 1.5))
+            exit_z = float(self.params.get("exit_z", 0.25))
+            max_positions = int(self.params.get("max_positions", max(1, len(self.symbols))))
+            if window < 2:
+                raise ValueError("window must be >= 2")
+            if entry_z <= 0:
+                raise ValueError("entry_z must be > 0")
+            if exit_z < 0:
+                raise ValueError("exit_z must be >= 0")
+            if exit_z > entry_z:
+                raise ValueError("exit_z should be <= entry_z")
+            if max_positions < 1:
+                raise ValueError("max_positions must be >= 1")
+            if "max_hold_days" in self.params and self.params["max_hold_days"] is not None:
+                if int(self.params["max_hold_days"]) < 1:
+                    raise ValueError("max_hold_days must be >= 1")
         return self
 
 
@@ -167,3 +202,38 @@ class BacktestResponse(BaseModel):
     error: Optional[str] = None
     dd_halted: bool = False
     dd_halt_date: Optional[date] = None
+
+
+class CompareRequest(BaseModel):
+    """Same universe / period / guardrails; run one or more strategies side-by-side."""
+
+    symbols: list[str] = Field(min_length=1)
+    start_date: date
+    end_date: date
+    initial_cash: float = Field(default=100_000.0, gt=0)
+    currency: Literal["USD"] = "USD"
+    strategies: list[StrategyConfig] = Field(min_length=1)
+    guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
+    costs: CostConfig = Field(default_factory=CostConfig)
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_symbols(cls, v: list[str]) -> list[str]:
+        out = [s.strip().upper() for s in v if s.strip()]
+        if not out:
+            raise ValueError("At least one symbol required")
+        return out
+
+    @model_validator(mode="after")
+    def validate_compare(self) -> CompareRequest:
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be >= start_date")
+        for strat in self.strategies:
+            missing = set(strat.symbols) - set(self.symbols)
+            if missing:
+                raise ValueError(f"strategy symbols not in universe: {sorted(missing)}")
+        return self
+
+
+class CompareResponse(BaseModel):
+    runs: list[BacktestResponse]

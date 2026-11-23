@@ -13,6 +13,8 @@ from app.models.schemas import (
     BacktestRequest,
     BacktestResponse,
     BacktestStatus,
+    CompareRequest,
+    CompareResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -24,12 +26,9 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@router.post("/backtests", response_model=BacktestResponse)
-def create_backtest(request: BacktestRequest) -> BacktestResponse:
-    # Ensure strategy symbols default to universe if caller only set top-level symbols
+def _execute_backtest(request: BacktestRequest) -> BacktestResponse:
     if not request.strategy.symbols:
         request.strategy.symbols = request.symbols
-    # Align strategy symbols with request if user only filled symbols once
     if set(request.strategy.symbols) - set(request.symbols):
         raise HTTPException(400, "strategy symbols must be subset of universe")
 
@@ -55,6 +54,31 @@ def create_backtest(request: BacktestRequest) -> BacktestResponse:
 
     store.update(run)
     return run
+
+
+@router.post("/backtests", response_model=BacktestResponse)
+def create_backtest(request: BacktestRequest) -> BacktestResponse:
+    return _execute_backtest(request)
+
+
+@router.post("/compare", response_model=CompareResponse)
+def compare_strategies(request: CompareRequest) -> CompareResponse:
+    """Run selected strategies on the same universe/period/guardrails."""
+    runs: list[BacktestResponse] = []
+    for strat in request.strategies:
+        symbols = strat.symbols or request.symbols
+        bt = BacktestRequest(
+            symbols=request.symbols,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            initial_cash=request.initial_cash,
+            currency=request.currency,
+            strategy=strat.model_copy(update={"symbols": symbols}),
+            guardrails=request.guardrails,
+            costs=request.costs,
+        )
+        runs.append(_execute_backtest(bt))
+    return CompareResponse(runs=runs)
 
 
 @router.get("/backtests/{run_id}", response_model=BacktestResponse)

@@ -8,7 +8,30 @@ export const DEFINITIONS = {
   end_date: 'Last day included in the historical test.',
   initial_cash: 'How much play money the test starts with, in US dollars.',
   strategy:
-    'Buy-and-hold means buy at the start and keep the positions unless a risk rule sells them.',
+    'The rules that decide what to own. Pick buy & hold, momentum, or mean reversion.',
+  strategy_buy_and_hold:
+    'Buy at the start and keep the positions unless a risk rule sells them.',
+  strategy_momentum:
+    'Rank names by recent performance and hold the top ones, refreshing on a schedule.',
+  strategy_mean_reversion:
+    'Buy when a name looks unusually cheap versus its recent average; sell as it normalizes (long only).',
+  lookback:
+    'How many past trading days are used to measure recent performance for ranking.',
+  top_n: 'How many of the strongest recent performers the strategy will hold at once.',
+  rebalance_days: 'How often (in trading days) the ranking is refreshed and holdings updated.',
+  skip_recent_days:
+    'Ignore this many most-recent days when scoring momentum, to reduce short-term whipsaws.',
+  weighting:
+    'Equal splits money evenly across picks; score puts more into the stronger recent winners.',
+  window: 'How many past trading days form the average and typical range for the z-score.',
+  entry_z:
+    'Buy when price is this many standard deviations below its recent average (more = pickier).',
+  exit_z:
+    'Sell when price has climbed back to within this many standard deviations of the average.',
+  max_hold_days: 'Optional cap on how many trading days a mean-reversion buy can stay open.',
+  max_positions: 'Maximum number of mean-reversion names held at the same time.',
+  compare_strategies:
+    'Which rule sets to run side-by-side on the same stocks, dates, cash, and risk limits.',
   max_position_pct:
     'The largest share of your portfolio that can go into any single stock or ETF.',
   max_trade_loss_pct:
@@ -31,9 +54,13 @@ export const DEFINITIONS = {
   num_stop_losses: 'How many times a single-position loss limit forced a sell.',
   num_dd_halts: 'How many times the whole-portfolio drop limit stopped new buys.',
   equity_curve: 'Your portfolio’s dollar value from day to day across the test.',
+  compare_equity:
+    'Portfolio value over time for each selected strategy on the same setup, drawn together.',
   drawdown_chart:
     'How far the portfolio sat below its previous high — deeper means a larger temporary loss.',
   trades_table: 'Every buy, sell, and risk decision the engine recorded for this run.',
+  compare_table:
+    'Side-by-side headline numbers for each strategy: return, risk-adjusted return, worst drop, and risk-rule counts.',
 } as const
 
 export type DefinitionKey = keyof typeof DEFINITIONS
@@ -107,6 +134,10 @@ export function humanizeNote(note: string | null | undefined): string {
   text = text.replace(/New risk rejected:\s*portfolio drawdown halt active/gi, () => {
     return 'New buys blocked while the portfolio drawdown halt is active'
   })
+
+  text = text.replace(/Exited:\s*no longer in target set/gi, 'Sold because it left the target set')
+  text = text.replace(/Trimmed toward target weight/gi, 'Sold some shares to move closer to the target weight')
+  text = text.replace(/Added toward target weight/gi, 'Bought more to move closer to the target weight')
 
   text = text.replace(/\s*\|\s*cash-scaled at fill/gi, ' (also scaled at fill for available cash)')
   text = text.replace(/no position to sell/gi, 'No open position to sell')
