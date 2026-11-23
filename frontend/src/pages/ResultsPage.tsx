@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import { getBacktest } from '../api'
 import { HeadingWithHelp, HelpTip } from '../components/HelpTip'
+import { MonteCarloSection } from '../components/MonteCarloSection'
 import {
   DEFINITIONS,
   humanizeNote,
@@ -302,6 +303,8 @@ export function ResultsPage() {
           </ResponsiveContainer>
         </div>
       </section>
+
+      <MonteCarloSection backtestId={result.id} defaultStartEquity={m.final_equity} />
 
       <section className="results-section trades-block" aria-labelledby="trades-heading">
         <HeadingWithHelp

@@ -577,7 +577,9 @@ export function ComparePage() {
             </div>
             <p className="hint">
               Comparing many parameter choices on the same history can overfit — treat this as
-              exploration, not a guarantee of future results.
+              exploration, not a guarantee of future results. Open <strong>View run</strong> on any
+              row to see full results and run a Monte Carlo forward projection from that
+              strategy’s returns.
             </p>
           </section>
         </div>

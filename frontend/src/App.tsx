@@ -13,7 +13,7 @@ export default function App() {
             <span className="brand-mark" aria-hidden />
             <div>
               <div className="brand-name">Strategy Backtester</div>
-              <div className="brand-sub">Historical test with risk limits · Phase B</div>
+              <div className="brand-sub">Historical test with risk limits · Phase C</div>
             </div>
           </div>
           <nav>

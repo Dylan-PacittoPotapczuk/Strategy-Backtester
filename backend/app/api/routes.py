@@ -1,4 +1,4 @@
-"""Backtest HTTP routes."""
+"""Backtest and Monte Carlo HTTP routes."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.data.adapter import get_default_adapter
 from app.db import RunStore
+from app.engine.monte_carlo import run_monte_carlo
 from app.engine.runner import BacktestRunner
 from app.models.schemas import (
     BacktestRequest,
@@ -15,6 +16,8 @@ from app.models.schemas import (
     BacktestStatus,
     CompareRequest,
     CompareResponse,
+    MonteCarloRequest,
+    MonteCarloResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -92,3 +95,51 @@ def get_backtest(run_id: UUID) -> BacktestResponse:
 @router.get("/backtests", response_model=list[BacktestResponse])
 def list_backtests(limit: int = 20) -> list[BacktestResponse]:
     return store.list_recent(limit=min(limit, 100))
+
+
+@router.post(
+    "/backtests/{run_id}/monte-carlo",
+    response_model=MonteCarloResponse,
+)
+def create_monte_carlo(run_id: UUID, request: MonteCarloRequest) -> MonteCarloResponse:
+    """Bootstrap (or block-bootstrap) forward paths from a completed backtest."""
+    run = store.get(run_id)
+    if not run:
+        raise HTTPException(404, "Backtest run not found")
+    if run.status != BacktestStatus.DONE:
+        raise HTTPException(400, "Backtest must be completed before running Monte Carlo")
+    if not run.daily_returns:
+        raise HTTPException(400, "Backtest has no daily returns to sample from")
+
+    if request.start_equity is not None:
+        start_equity = request.start_equity
+    elif run.metrics is not None:
+        start_equity = run.metrics.final_equity
+    else:
+        start_equity = run.request.initial_cash
+
+    try:
+        result = run_monte_carlo(run.daily_returns, request, start_equity=start_equity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return store.create_monte_carlo(run_id, request, result)
+
+
+@router.get("/monte-carlo/{mc_id}", response_model=MonteCarloResponse)
+def get_monte_carlo(mc_id: UUID) -> MonteCarloResponse:
+    mc = store.get_monte_carlo(mc_id)
+    if not mc:
+        raise HTTPException(404, "Monte Carlo run not found")
+    return mc
+
+
+@router.get(
+    "/backtests/{run_id}/monte-carlo",
+    response_model=list[MonteCarloResponse],
+)
+def list_monte_carlo(run_id: UUID, limit: int = 10) -> list[MonteCarloResponse]:
+    run = store.get(run_id)
+    if not run:
+        raise HTTPException(404, "Backtest run not found")
+    return store.list_monte_carlo_for_backtest(run_id, limit=min(limit, 50))

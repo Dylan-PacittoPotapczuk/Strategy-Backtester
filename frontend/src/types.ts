@@ -105,3 +105,52 @@ export interface BacktestResponse {
 export interface CompareResponse {
   runs: BacktestResponse[]
 }
+
+export interface MonteCarloRequest {
+  n_paths?: number
+  horizon_days?: number
+  seed?: number | null
+  block_bootstrap?: boolean
+  block_size?: number
+  start_equity?: number | null
+  paths_sample_count?: number
+}
+
+export interface PercentileBand {
+  day: number
+  p5: number
+  p25: number
+  p50: number
+  p75: number
+  p95: number
+}
+
+export interface TerminalReturnDist {
+  mean: number
+  std: number
+  p5: number
+  p50: number
+  p95: number
+  prob_below_start: number
+}
+
+export interface MonteCarloResult {
+  percentile_bands: PercentileBand[]
+  terminal_return_dist: TerminalReturnDist
+  paths_sample?: number[][] | null
+  start_equity: number
+  n_paths: number
+  horizon_days: number
+  block_bootstrap: boolean
+  block_size?: number | null
+  seed?: number | null
+  assumptions: string
+}
+
+export interface MonteCarloResponse {
+  id: string
+  created_at: string
+  backtest_run_id: string
+  request: MonteCarloRequest
+  result: MonteCarloResult
+}
