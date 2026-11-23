@@ -12,7 +12,7 @@ export default function App() {
             <span className="brand-mark" aria-hidden />
             <div>
               <div className="brand-name">Strategy Backtester</div>
-              <div className="brand-sub">Risk guardrails · Phase A</div>
+              <div className="brand-sub">Historical test with risk limits · Phase A</div>
             </div>
           </div>
           <nav>
@@ -29,7 +29,7 @@ export default function App() {
           </Routes>
         </main>
         <footer className="foot">
-          Long-only equities/ETFs · next-open fills · free Yahoo EOD data · USD
+          Stocks &amp; ETFs only · priced at next day’s open · free end-of-day data · USD
         </footer>
       </div>
     </BrowserRouter>
