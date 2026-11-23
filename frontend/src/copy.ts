@@ -61,6 +61,32 @@ export const DEFINITIONS = {
   trades_table: 'Every buy, sell, and risk decision the engine recorded for this run.',
   compare_table:
     'Side-by-side headline numbers for each strategy: return, risk-adjusted return, worst drop, and risk-rule counts.',
+  monte_carlo:
+    'A set of made-up future paths built by reshuffling this backtest’s daily returns — not a forecast, just a range of plausible outcomes.',
+  mc_simulation:
+    'One simulated future path of portfolio value, built by randomly drawing from the backtest’s day-to-day returns.',
+  mc_n_paths:
+    'How many alternate futures to simulate. More paths smooth the bands; the default stays modest so the page stays quick.',
+  mc_horizon:
+    'How many trading days into the future each path is projected (about 252 trading days ≈ one year).',
+  mc_seed:
+    'A number that locks the random draws so the same settings produce the same chart again.',
+  mc_block_bootstrap:
+    'When on, returns are drawn in short streaks instead of one day at a time, which keeps mild day-to-day dependence from the backtest.',
+  mc_block_size:
+    'Length of each streak (in trading days) when block resampling is on — typically about one to four weeks.',
+  mc_percentile_path:
+    'At each future day, the band edges show where a given share of simulated paths sat (for example, 5% were below the bottom edge).',
+  mc_percentile_bands:
+    'Shaded ranges of simulated portfolio value over time: outer band ≈ middle 90% of paths, inner band ≈ middle 50%, line = typical (median) path.',
+  mc_terminal_band:
+    'Where ending portfolio value (or return) landed across all simulations — summarized as mean, spread, and low/mid/high percentiles.',
+  mc_terminal_return:
+    'Gain or loss from the Monte Carlo start value to the end of each simulated path, as a percent.',
+  mc_prob_below_start:
+    'Share of simulated paths that finished worth less than they started — a rough chance of a loss over the horizon.',
+  mc_assumptions:
+    'Forward paths reuse the backtest’s risk-constrained daily returns. Stops and drawdown halts are not re-run on each fake path; treat bands as “similar behavior continues,” not a full re-simulation of risk rules.',
 } as const
 
 export type DefinitionKey = keyof typeof DEFINITIONS

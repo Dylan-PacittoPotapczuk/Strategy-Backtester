@@ -3,6 +3,8 @@ import type {
   BacktestResponse,
   CompareRequest,
   CompareResponse,
+  MonteCarloRequest,
+  MonteCarloResponse,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
@@ -46,6 +48,21 @@ export async function getBacktest(id: string): Promise<BacktestResponse> {
   const res = await fetch(`${API_BASE}/api/backtests/${id}`)
   if (!res.ok) {
     throw new Error(`Failed to load backtest ${id}`)
+  }
+  return res.json()
+}
+
+export async function runMonteCarlo(
+  backtestId: string,
+  body: MonteCarloRequest = {},
+): Promise<MonteCarloResponse> {
+  const res = await fetch(`${API_BASE}/api/backtests/${backtestId}/monte-carlo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw new Error(await readError(res))
   }
   return res.json()
 }

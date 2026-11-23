@@ -15,6 +15,9 @@ from app.models.schemas import (
     BacktestStatus,
     EquityPoint,
     Metrics,
+    MonteCarloRequest,
+    MonteCarloResponse,
+    MonteCarloResult,
     Trade,
 )
 
@@ -43,6 +46,18 @@ class RunStore:
                     request_json TEXT NOT NULL,
                     result_json TEXT,
                     error TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS monte_carlo_runs (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    backtest_run_id TEXT NOT NULL,
+                    request_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    FOREIGN KEY (backtest_run_id) REFERENCES backtest_runs(id)
                 )
                 """
             )
@@ -146,6 +161,73 @@ class RunStore:
         out: list[BacktestResponse] = []
         for r in rows:
             item = self.get(UUID(r["id"]))
+            if item:
+                out.append(item)
+        return out
+
+    def create_monte_carlo(
+        self,
+        backtest_run_id: UUID,
+        request: MonteCarloRequest,
+        result: MonteCarloResult,
+    ) -> MonteCarloResponse:
+        run_id = uuid4()
+        created = datetime.now(timezone.utc)
+        resp = MonteCarloResponse(
+            id=run_id,
+            created_at=created,
+            backtest_run_id=backtest_run_id,
+            request=request,
+            result=result,
+        )
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO monte_carlo_runs
+                    (id, created_at, backtest_run_id, request_json, result_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(run_id),
+                    created.isoformat(),
+                    str(backtest_run_id),
+                    request.model_dump_json(),
+                    result.model_dump_json(),
+                ),
+            )
+        return resp
+
+    def get_monte_carlo(self, mc_id: UUID) -> Optional[MonteCarloResponse]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM monte_carlo_runs WHERE id = ?", (str(mc_id),)
+            ).fetchone()
+        if not row:
+            return None
+        return MonteCarloResponse(
+            id=UUID(row["id"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            backtest_run_id=UUID(row["backtest_run_id"]),
+            request=MonteCarloRequest.model_validate_json(row["request_json"]),
+            result=MonteCarloResult.model_validate_json(row["result_json"]),
+        )
+
+    def list_monte_carlo_for_backtest(
+        self, backtest_run_id: UUID, limit: int = 10
+    ) -> list[MonteCarloResponse]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM monte_carlo_runs
+                WHERE backtest_run_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (str(backtest_run_id), limit),
+            ).fetchall()
+        out: list[MonteCarloResponse] = []
+        for r in rows:
+            item = self.get_monte_carlo(UUID(r["id"]))
             if item:
                 out.append(item)
         return out

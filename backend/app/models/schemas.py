@@ -237,3 +237,86 @@ class CompareRequest(BaseModel):
 
 class CompareResponse(BaseModel):
     runs: list[BacktestResponse]
+
+
+# --- Monte Carlo (Phase C) -------------------------------------------------
+
+
+class MonteCarloRequest(BaseModel):
+    """Parameters for a forward projection from a completed backtest's returns."""
+
+    n_paths: int = Field(
+        default=500,
+        ge=10,
+        le=2000,
+        description="Number of simulated paths (capped for snappy UX)",
+    )
+    horizon_days: int = Field(
+        default=252,
+        ge=1,
+        le=1260,
+        description="Forward trading days to project",
+    )
+    seed: Optional[int] = Field(default=None, description="RNG seed for reproducibility")
+    block_bootstrap: bool = Field(
+        default=False,
+        description="If true, resample contiguous blocks to keep mild autocorrelation",
+    )
+    block_size: int = Field(
+        default=10,
+        ge=1,
+        le=63,
+        description="Block length in trading days when block_bootstrap is true",
+    )
+    start_equity: Optional[float] = Field(
+        default=None,
+        gt=0,
+        description="Override starting equity (default: backtest terminal equity)",
+    )
+    paths_sample_count: int = Field(
+        default=0,
+        ge=0,
+        le=50,
+        description="Optional thin sample of full equity paths for charting",
+    )
+
+
+class PercentileBand(BaseModel):
+    day: int
+    p5: float
+    p25: float
+    p50: float
+    p75: float
+    p95: float
+
+
+class TerminalReturnDist(BaseModel):
+    mean: float
+    std: float
+    p5: float
+    p50: float
+    p95: float
+    prob_below_start: float = Field(
+        description="Share of paths ending below starting equity",
+    )
+
+
+class MonteCarloResult(BaseModel):
+    percentile_bands: list[PercentileBand]
+    terminal_return_dist: TerminalReturnDist
+    paths_sample: Optional[list[list[float]]] = None
+    start_equity: float
+    n_paths: int
+    horizon_days: int
+    block_bootstrap: bool
+    block_size: Optional[int] = None
+    seed: Optional[int] = None
+    assumptions: str
+
+
+class MonteCarloResponse(BaseModel):
+    id: UUID
+    created_at: datetime
+    backtest_run_id: UUID
+    request: MonteCarloRequest
+    result: MonteCarloResult
