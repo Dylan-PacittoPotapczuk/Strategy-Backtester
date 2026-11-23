@@ -124,6 +124,44 @@ class StrategyConfig(BaseModel):
         return self
 
 
+class WalkForwardConfig(BaseModel):
+    """Split the backtest window into in-sample (train) vs out-of-sample (test)."""
+
+    enabled: bool = False
+    mode: Literal["percent", "date"] = "percent"
+    train_pct: float = Field(
+        default=0.70,
+        gt=0.05,
+        lt=0.95,
+        description="Fraction of trading days used for in-sample when mode=percent",
+    )
+    split_date: Optional[date] = Field(
+        default=None,
+        description="First out-of-sample calendar date when mode=date",
+    )
+
+    @model_validator(mode="after")
+    def validate_walk_forward(self) -> WalkForwardConfig:
+        if self.enabled and self.mode == "date" and self.split_date is None:
+            raise ValueError("split_date is required when walk-forward mode is 'date'")
+        return self
+
+
+class BenchmarkConfig(BaseModel):
+    """Buy-and-hold benchmark overlay (default SPY)."""
+
+    enabled: bool = True
+    symbol: str = Field(default="SPY", min_length=1)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, v: str) -> str:
+        s = v.strip().upper()
+        if not s:
+            raise ValueError("benchmark symbol required")
+        return s
+
+
 class BacktestRequest(BaseModel):
     symbols: list[str] = Field(min_length=1)
     start_date: date
@@ -133,6 +171,13 @@ class BacktestRequest(BaseModel):
     strategy: StrategyConfig
     guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
     costs: CostConfig = Field(default_factory=CostConfig)
+    walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
+    benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
+    name: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Optional display name for this saved run",
+    )
 
     @field_validator("symbols")
     @classmethod
@@ -152,6 +197,13 @@ class BacktestRequest(BaseModel):
             missing = set(self.strategy.symbols) - set(self.symbols)
             if missing:
                 raise ValueError(f"strategy symbols not in universe: {sorted(missing)}")
+        if (
+            self.walk_forward.enabled
+            and self.walk_forward.mode == "date"
+            and self.walk_forward.split_date is not None
+        ):
+            if not (self.start_date < self.walk_forward.split_date <= self.end_date):
+                raise ValueError("walk-forward split_date must be within (start_date, end_date]")
         return self
 
 
@@ -190,11 +242,34 @@ class Metrics(BaseModel):
     trading_days: int
 
 
+class WalkForwardResult(BaseModel):
+    enabled: bool
+    mode: Optional[Literal["percent", "date"]] = None
+    split_date: Optional[date] = None
+    train_pct_used: Optional[float] = None
+    train_trading_days: int = 0
+    test_trading_days: int = 0
+    metrics_in_sample: Optional[Metrics] = None
+    metrics_out_of_sample: Optional[Metrics] = None
+    warning: Optional[str] = None
+
+
+class BenchmarkResult(BaseModel):
+    enabled: bool
+    symbol: str
+    equity_curve: list[EquityPoint] = Field(default_factory=list)
+    metrics: Optional[Metrics] = None
+    excess_return: Optional[float] = None
+    excess_cagr: Optional[float] = None
+    excess_sharpe: Optional[float] = None
+
+
 class BacktestResponse(BaseModel):
     id: UUID
     created_at: datetime
     status: BacktestStatus
     request: BacktestRequest
+    name: Optional[str] = None
     equity_curve: list[EquityPoint] = Field(default_factory=list)
     trades: list[Trade] = Field(default_factory=list)
     metrics: Optional[Metrics] = None
@@ -202,6 +277,9 @@ class BacktestResponse(BaseModel):
     error: Optional[str] = None
     dd_halted: bool = False
     dd_halt_date: Optional[date] = None
+    walk_forward: Optional[WalkForwardResult] = None
+    benchmark: Optional[BenchmarkResult] = None
+    no_oos_warning: Optional[str] = None
 
 
 class CompareRequest(BaseModel):
@@ -215,6 +293,8 @@ class CompareRequest(BaseModel):
     strategies: list[StrategyConfig] = Field(min_length=1)
     guardrails: GuardrailConfig = Field(default_factory=GuardrailConfig)
     costs: CostConfig = Field(default_factory=CostConfig)
+    walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
+    benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
 
     @field_validator("symbols")
     @classmethod
@@ -232,11 +312,58 @@ class CompareRequest(BaseModel):
             missing = set(strat.symbols) - set(self.symbols)
             if missing:
                 raise ValueError(f"strategy symbols not in universe: {sorted(missing)}")
+        if (
+            self.walk_forward.enabled
+            and self.walk_forward.mode == "date"
+            and self.walk_forward.split_date is not None
+        ):
+            if not (self.start_date < self.walk_forward.split_date <= self.end_date):
+                raise ValueError("walk-forward split_date must be within (start_date, end_date]")
         return self
 
 
 class CompareResponse(BaseModel):
     runs: list[BacktestResponse]
+
+
+class RunSummary(BaseModel):
+    """Lightweight recent-run row for the saved-runs list."""
+
+    id: UUID
+    created_at: datetime
+    name: Optional[str] = None
+    status: BacktestStatus
+    strategy_type: str
+    symbols: list[str]
+    start_date: date
+    end_date: date
+    total_return: Optional[float] = None
+    walk_forward_enabled: bool = False
+    benchmark_symbol: Optional[str] = None
+
+
+class RunNameUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class ConfigPresetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    config: dict[str, Any] = Field(
+        description="Saved Configure/Compare form payload (JSON object)",
+    )
+
+
+class ConfigPresetUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    config: Optional[dict[str, Any]] = None
+
+
+class ConfigPreset(BaseModel):
+    id: UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+    config: dict[str, Any]
 
 
 # --- Monte Carlo (Phase C) -------------------------------------------------

@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
-import { getBacktest } from '../api'
+import { getBacktest, renameBacktest } from '../api'
 import { HeadingWithHelp, HelpTip } from '../components/HelpTip'
 import { MonteCarloSection } from '../components/MonteCarloSection'
 import {
@@ -20,7 +22,7 @@ import {
 } from '../copy'
 import { formatDate, formatDateShort, num, pct, usd, usdPrecise } from '../format'
 import { strategyLabel } from '../strategyMeta'
-import type { BacktestResponse, TradeReason } from '../types'
+import type { BacktestResponse, Metrics, TradeReason } from '../types'
 
 export function ResultsPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -31,6 +33,8 @@ export function ResultsPage() {
   )
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!cached || cached.id !== runId)
+  const [nameDraft, setNameDraft] = useState('')
+  const [renaming, setRenaming] = useState(false)
 
   useEffect(() => {
     if (!runId || (result && result.id === runId)) {
@@ -43,6 +47,7 @@ export function ResultsPage() {
       .then((r) => {
         if (!cancelled) {
           setResult(r)
+          setNameDraft(r.name || '')
           setLoading(false)
         }
       })
@@ -56,6 +61,32 @@ export function ResultsPage() {
       cancelled = true
     }
   }, [runId, result])
+
+  useEffect(() => {
+    if (result) setNameDraft(result.name || '')
+  }, [result])
+
+  const equityData = useMemo(() => {
+    if (!result) return []
+    const byDate = new Map<string, Record<string, number | string>>()
+    for (const p of result.equity_curve) {
+      byDate.set(p.date, {
+        date: p.date,
+        strategy: Math.round(p.equity * 100) / 100,
+        drawdown: Math.round(p.drawdown_pct * 10000) / 100,
+      })
+    }
+    if (result.benchmark?.equity_curve) {
+      for (const p of result.benchmark.equity_curve) {
+        const row = byDate.get(p.date) ?? { date: p.date }
+        row.benchmark = Math.round(p.equity * 100) / 100
+        byDate.set(p.date, row)
+      }
+    }
+    return Array.from(byDate.values()).sort((a, b) =>
+      String(a.date).localeCompare(String(b.date)),
+    )
+  }, [result])
 
   if (error) {
     return (
@@ -96,14 +127,23 @@ export function ResultsPage() {
   }
 
   const m = result.metrics
-  const equityData = result.equity_curve.map((p) => ({
-    date: p.date,
-    equity: Math.round(p.equity * 100) / 100,
-    drawdown: Math.round(p.drawdown_pct * 10000) / 100,
-  }))
-
   const filledTrades = result.trades.filter((t) => t.qty > 0)
   const riskEvents = result.trades.filter((t) => t.qty === 0)
+  const wf = result.walk_forward
+  const bench = result.benchmark
+
+  async function saveName() {
+    if (!result || !nameDraft.trim()) return
+    setRenaming(true)
+    try {
+      const updated = await renameBacktest(result.id, nameDraft.trim())
+      setResult(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   return (
     <section className="panel results">
@@ -114,10 +154,23 @@ export function ResultsPage() {
             {strategyLabel(result.request.strategy.type)} · {result.request.symbols.join(', ')} ·{' '}
             {formatDate(result.request.start_date)} → {formatDate(result.request.end_date)}
           </p>
+          <div className="run-name-edit">
+            <FieldNameInput
+              value={nameDraft}
+              onChange={setNameDraft}
+              onSave={saveName}
+              saving={renaming}
+            />
+          </div>
         </div>
-        <Link className="btn-ghost" to="/">
-          New test
-        </Link>
+        <div className="head-actions">
+          <Link className="btn-ghost" to="/runs">
+            Saved runs
+          </Link>
+          <Link className="btn-ghost" to="/">
+            New test
+          </Link>
+        </div>
       </header>
 
       {result.dd_halted && (
@@ -125,6 +178,16 @@ export function ResultsPage() {
           Portfolio drawdown limit was hit
           {result.dd_halt_date ? ` on ${formatDate(result.dd_halt_date)}` : ''}. New buys were
           blocked after that; open positions were not sold automatically.
+        </div>
+      )}
+
+      {result.no_oos_warning && (
+        <div className="warn-banner" role="status">
+          <span className="label-row inline">
+            <strong>No out-of-sample holdout.</strong>
+            <HelpTip definition={DEFINITIONS.no_oos_warning} />
+          </span>{' '}
+          {result.no_oos_warning}
         </div>
       )}
 
@@ -189,6 +252,82 @@ export function ResultsPage() {
         </div>
       </section>
 
+      {wf?.enabled && wf.metrics_in_sample && wf.metrics_out_of_sample && (
+        <section className="results-section" aria-labelledby="wf-heading">
+          <HeadingWithHelp
+            as="h2"
+            text="In-sample vs out-of-sample"
+            definition={DEFINITIONS.walk_forward}
+            className="section-title"
+          />
+          <p className="chart-caption" id="wf-heading">
+            Split on {wf.split_date ? formatDate(wf.split_date) : '—'} ·{' '}
+            {wf.train_trading_days} in-sample days · {wf.test_trading_days} out-of-sample days
+            {wf.train_pct_used != null
+              ? ` · ~${Math.round(wf.train_pct_used * 100)}% in-sample`
+              : ''}
+            . Same rules throughout — not an automatic parameter search.
+          </p>
+          <div className="wf-grid">
+            <div className="wf-card">
+              <h3>
+                <span className="label-row inline">
+                  In-sample
+                  <HelpTip definition={DEFINITIONS.metrics_in_sample} />
+                </span>
+              </h3>
+              <SegmentMetrics m={wf.metrics_in_sample} />
+            </div>
+            <div className="wf-card wf-card-oos">
+              <h3>
+                <span className="label-row inline">
+                  Out-of-sample
+                  <HelpTip definition={DEFINITIONS.metrics_out_of_sample} />
+                </span>
+              </h3>
+              <SegmentMetrics m={wf.metrics_out_of_sample} />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {bench?.enabled && bench.metrics && (
+        <section className="results-section" aria-labelledby="bench-heading">
+          <HeadingWithHelp
+            as="h2"
+            text={`Versus ${bench.symbol} buy-and-hold`}
+            definition={DEFINITIONS.benchmark}
+            className="section-title"
+          />
+          <p className="chart-caption" id="bench-heading">
+            Same start cash and dates. Excess metrics = strategy minus benchmark.
+          </p>
+          <div className="metrics-secondary">
+            <Metric
+              label={`${bench.symbol} total return`}
+              value={pct(bench.metrics.total_return)}
+              definition={DEFINITIONS.total_return}
+            />
+            <Metric
+              label="Excess return"
+              value={pct(bench.excess_return ?? 0)}
+              definition={DEFINITIONS.excess_return}
+              tone={(bench.excess_return ?? 0) >= 0 ? 'up' : 'down'}
+            />
+            <Metric
+              label="Excess yearly return"
+              value={pct(bench.excess_cagr ?? 0)}
+              definition={DEFINITIONS.excess_cagr}
+            />
+            <Metric
+              label="Excess risk-adjusted"
+              value={num(bench.excess_sharpe ?? 0)}
+              definition={DEFINITIONS.excess_sharpe}
+            />
+          </div>
+        </section>
+      )}
+
       <section className="results-section chart-block" aria-labelledby="equity-heading">
         <HeadingWithHelp
           as="h2"
@@ -197,18 +336,15 @@ export function ResultsPage() {
           className="section-title"
         />
         <p className="chart-caption" id="equity-heading">
-          Dollar value of the portfolio each day. A flat line usually means the test is holding cash
-          after exits.
+          Dollar value of the portfolio each day
+          {bench?.enabled ? `, with ${bench.symbol} buy-and-hold overlaid` : ''}.
+          {wf?.enabled && wf.split_date
+            ? ` Vertical note: out-of-sample starts ${formatDate(wf.split_date)}.`
+            : ''}
         </p>
         <div className="chart-frame chart-frame-primary">
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={equityData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="eqFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f6e56" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#0f6e56" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={equityData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
               <CartesianGrid stroke="rgba(20,30,28,0.08)" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -218,7 +354,7 @@ export function ResultsPage() {
               />
               <YAxis
                 tick={{ fontSize: 11, fill: '#5a6b63' }}
-                tickFormatter={(v) => `$${Math.round(v / 1000)}k`}
+                tickFormatter={(v) => `$${Math.round(Number(v) / 1000)}k`}
                 width={56}
                 label={{
                   value: 'Portfolio ($)',
@@ -229,19 +365,56 @@ export function ResultsPage() {
                 }}
               />
               <Tooltip
-                formatter={(value) => [usdPrecise(Number(value)), 'Portfolio value']}
+                formatter={(value, name) => [
+                  usdPrecise(Number(value)),
+                  name === 'benchmark'
+                    ? `${bench?.symbol ?? 'Benchmark'} buy & hold`
+                    : 'Strategy',
+                ]}
                 labelFormatter={(l) => formatDate(String(l))}
               />
-              <Area
+              <Legend
+                formatter={(value) =>
+                  value === 'benchmark'
+                    ? `${bench?.symbol ?? 'Benchmark'} buy & hold`
+                    : 'Strategy'
+                }
+              />
+              {wf?.enabled && wf.split_date && (
+                <ReferenceLine
+                  x={wf.split_date}
+                  stroke="#9a3412"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: 'OOS →',
+                    position: 'insideTopRight',
+                    fill: '#9a3412',
+                    fontSize: 11,
+                  }}
+                />
+              )}
+              <Line
                 type="monotone"
-                dataKey="equity"
-                name="Portfolio value"
+                dataKey="strategy"
+                name="strategy"
                 stroke="#0f6e56"
-                fill="url(#eqFill)"
                 strokeWidth={2}
                 dot={false}
+                connectNulls
               />
-            </AreaChart>
+              {bench?.enabled && (
+                <Line
+                  type="monotone"
+                  dataKey="benchmark"
+                  name="benchmark"
+                  stroke="#6b7280"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  dot={false}
+                  connectNulls
+                />
+              )}
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </section>
@@ -259,13 +432,7 @@ export function ResultsPage() {
         </p>
         <div className="chart-frame">
           <ResponsiveContainer width="100%" height={190}>
-            <AreaChart data={equityData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <defs>
-                <linearGradient id="ddFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#b42318" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#b42318" stopOpacity={0} />
-                </linearGradient>
-              </defs>
+            <LineChart data={equityData} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
               <CartesianGrid stroke="rgba(20,30,28,0.08)" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -278,28 +445,20 @@ export function ResultsPage() {
                 tickFormatter={(v) => `${v}%`}
                 width={48}
                 reversed
-                label={{
-                  value: 'Below peak',
-                  angle: -90,
-                  position: 'insideLeft',
-                  offset: 8,
-                  style: { fontSize: 11, fill: '#5a6b63' },
-                }}
               />
               <Tooltip
                 formatter={(value) => [`${Number(value).toFixed(2)}%`, 'Below peak']}
                 labelFormatter={(l) => formatDate(String(l))}
               />
-              <Area
+              <Line
                 type="monotone"
                 dataKey="drawdown"
                 name="Below peak"
                 stroke="#b42318"
-                fill="url(#ddFill)"
                 strokeWidth={2}
                 dot={false}
               />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
       </section>
@@ -340,6 +499,47 @@ export function ResultsPage() {
         )}
       </section>
     </section>
+  )
+}
+
+function FieldNameInput({
+  value,
+  onChange,
+  onSave,
+  saving,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onSave: () => void
+  saving: boolean
+}) {
+  return (
+    <span className="inline-rename">
+      <span className="label-row inline">
+        <span className="muted-label">Name</span>
+        <HelpTip definition={DEFINITIONS.run_name} />
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Untitled run"
+        aria-label="Run name"
+      />
+      <button type="button" className="btn-ghost btn-small" onClick={onSave} disabled={saving}>
+        {saving ? 'Saving…' : 'Save name'}
+      </button>
+    </span>
+  )
+}
+
+function SegmentMetrics({ m }: { m: Metrics }) {
+  return (
+    <div className="metrics-secondary compact">
+      <Metric label="Total return" value={pct(m.total_return)} definition={DEFINITIONS.total_return} />
+      <Metric label="Risk-adjusted" value={num(m.sharpe)} definition={DEFINITIONS.sharpe} />
+      <Metric label="Worst drop" value={pct(m.max_drawdown)} definition={DEFINITIONS.max_drawdown} />
+      <Metric label="Filled trades" value={String(m.num_trades)} definition={DEFINITIONS.num_trades} />
+    </div>
   )
 }
 

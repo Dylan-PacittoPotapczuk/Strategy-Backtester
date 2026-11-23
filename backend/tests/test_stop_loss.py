@@ -7,6 +7,7 @@ from datetime import date
 from app.data.adapter import FixtureDataAdapter
 from app.engine.runner import BacktestRunner
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -45,7 +46,8 @@ def test_stop_loss_triggers_on_adverse_move(start: date) -> None:
             max_portfolio_drawdown_pct=0.99,  # don't trip DD first
         ),
         costs=CostConfig(slippage_bps=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     stops = [t for t in result["trades"] if t.reason == TradeReason.STOP_LOSS and t.qty > 0]
     assert len(stops) == 1

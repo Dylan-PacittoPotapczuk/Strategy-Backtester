@@ -8,6 +8,7 @@ from app.data.adapter import FixtureDataAdapter
 from app.engine.runner import BacktestRunner
 from app.engine.strategy import MomentumStrategy
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -111,7 +112,8 @@ def test_momentum_fill_is_next_open_not_signal_close(start: date) -> None:
             max_portfolio_drawdown_pct=0.99,
         ),
         costs=CostConfig(slippage_bps=0.0, commission_per_trade=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     buys = [
         t

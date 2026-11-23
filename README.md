@@ -1,6 +1,6 @@
-# Strategy Backtester (Phase C)
+# Strategy Backtester
 
-Historical equity/ETF backtester with risk guardrails. Phase C adds **Monte Carlo forward projections** from a completed backtest’s daily return series (bootstrap or block-bootstrap), with percentile equity bands and a terminal return summary.
+Historical equity/ETF backtester with risk guardrails, **walk-forward / out-of-sample splits**, **benchmark overlays** (default SPY), **saved runs + config presets**, Monte Carlo forward projections, and a Compare screen.
 
 **Stack:** Python 3.11+ / FastAPI engine · React + Vite + TypeScript UI · SQLite run store · free Yahoo Finance EOD data (chart API; same free source as yfinance)
 
@@ -28,7 +28,7 @@ npm run dev
 
 UI: http://127.0.0.1:5173 (Vite proxies `/api` → backend `:8000`)
 
-### Example: single backtest (momentum)
+### Example: single backtest with walk-forward + benchmark
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/backtests \
@@ -39,6 +39,7 @@ curl -s -X POST http://127.0.0.1:8000/api/backtests \
     "end_date": "2023-12-31",
     "initial_cash": 100000,
     "currency": "USD",
+    "name": "Momentum 70/30 OOS",
     "strategy": {
       "type": "momentum",
       "symbols": ["SPY", "QQQ", "IWM"],
@@ -57,11 +58,26 @@ curl -s -X POST http://127.0.0.1:8000/api/backtests \
       "sizing_mode": "equal_weight",
       "flatten_on_breach": false
     },
-    "costs": {
-      "slippage_bps": 5,
-      "commission_per_trade": 0
-    }
+    "costs": { "slippage_bps": 5, "commission_per_trade": 0 },
+    "walk_forward": { "enabled": true, "mode": "percent", "train_pct": 0.7 },
+    "benchmark": { "enabled": true, "symbol": "SPY" }
   }' | python3 -m json.tool
+```
+
+Walk-forward modes: `"percent"` (share of trading days) or `"date"` with `"split_date": "2022-01-01"`. Same strategy rules run on the full window; metrics are reported separately for in-sample vs out-of-sample. This is **not** automatic parameter search.
+
+### Example: presets & saved runs
+
+```bash
+# List recent runs (name + timestamp + headline fields)
+curl -s http://127.0.0.1:8000/api/runs | python3 -m json.tool
+
+# Save a Configure-form preset (no auth; local SQLite)
+curl -s -X POST http://127.0.0.1:8000/api/presets \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"My momentum setup","config":{"strategyType":"momentum"}}' | python3 -m json.tool
+
+curl -s http://127.0.0.1:8000/api/presets | python3 -m json.tool
 ```
 
 ### Example: Monte Carlo from a completed backtest
@@ -77,8 +93,6 @@ curl -s -X POST "http://127.0.0.1:8000/api/backtests/RUN_ID/monte-carlo" \
     "block_bootstrap": false
   }' | python3 -m json.tool
 ```
-
-Optional: `"block_bootstrap": true, "block_size": 10` to resample short contiguous blocks (mild autocorrelation). Defaults cap at **500 paths** (API max 2,000) for snappy UX.
 
 ### Example: compare strategies
 
@@ -102,17 +116,20 @@ curl -s -X POST http://127.0.0.1:8000/api/compare \
       "sizing_mode": "equal_weight",
       "flatten_on_breach": false
     },
-    "costs": {"slippage_bps": 5, "commission_per_trade": 0}
+    "costs": {"slippage_bps": 5, "commission_per_trade": 0},
+    "walk_forward": {"enabled": true, "mode": "percent", "train_pct": 0.7},
+    "benchmark": {"enabled": true, "symbol": "SPY"}
   }' | python3 -m json.tool
 ```
 
 ### UI flow
 
-1. **Configure** → pick buy & hold / momentum / mean reversion, set params (each field has a “?” definition), symbols, dates, cash, guardrails, costs → **Run backtest**.
-2. **Results** → equity curve, drawdown, metrics, trade blotter, then **Run forward projection** for Monte Carlo percentile bands + terminal return summary.
-3. **Compare** → same shared setup; select strategies → **Run comparison** → overlay equity curves + metrics table. Open any row’s **View run** for full results and MC.
+1. **Configure** → strategy + params (“?” definitions), symbols, dates, cash, guardrails, costs, optional walk-forward split, benchmark symbol, optional run name / presets → **Run backtest**.
+2. **Results** → equity vs benchmark, drawdown, full + IS/OOS metrics when walk-forward is on, excess-return strip, trade blotter, Monte Carlo. Warns when tuning without OOS.
+3. **Compare** → shared setup including walk-forward + benchmark; overlay curves + metrics table (IS/OOS + excess columns when enabled).
+4. **Saved runs** → reopen recent SQLite-backed runs; rename; load Configure presets from the Configure screen.
 
-## Strategies (Phase B)
+## Strategies
 
 | Strategy | Rule (summary) | Key params |
 |----------|----------------|------------|
@@ -122,16 +139,31 @@ curl -s -X POST http://127.0.0.1:8000/api/compare \
 
 Signals use closes through the signal day only; fills are at the **next open** (no look-ahead).
 
-## Monte Carlo (Phase C)
+## Walk-forward & benchmarks
+
+| Feature | Detail |
+|---------|--------|
+| Walk-forward | Percent or date split; in-sample vs out-of-sample metrics on the continuous equity curve; UI warns when disabled |
+| Benchmark | Buy-and-hold of configurable symbol (default **SPY**); equity overlay; excess return / CAGR / Sharpe vs strategy |
+| Alignment | Strategy calendar intersects benchmark trading days so series share dates |
+| Compare | Same walk-forward + benchmark apply to every strategy in the overlay |
+
+## Monte Carlo
 
 | Item | Detail |
 |------|--------|
 | Input | Backtest `daily_returns` (after costs & guardrails) |
 | Sampler | i.i.d. bootstrap, or optional **block bootstrap** (`block_size` ~5–21) |
 | Defaults | 500 paths · 252-day horizon · optional seed · start equity = backtest terminal |
-| Outputs | Percentile bands (p5 / p25 / p50 / p75 / p95) by day; terminal return mean / std / p5 / p50 / p95; P(end below start) |
-| API | `POST /api/backtests/{id}/monte-carlo`, `GET /api/monte-carlo/{mc_id}`, `GET /api/backtests/{id}/monte-carlo` |
 | Assumption | Path-dependent guardrails are **not** re-applied on synthetic paths — disclosed in the Results UI |
+
+## Saved runs & presets
+
+| API | Purpose |
+|-----|---------|
+| `GET /api/runs` | Recent run summaries (name, time, strategy, return) |
+| `PATCH /api/backtests/{id}/name` | Rename a run |
+| `GET/POST /api/presets`, `PATCH/DELETE /api/presets/{id}` | Config presets (local SQLite, no auth) |
 
 ## Execution assumptions (locked)
 
@@ -150,7 +182,7 @@ cd backend
 python3 -m pytest -q
 ```
 
-Covers fill lag, position sizing, stop-loss, drawdown halt, momentum / mean-reversion, and Monte Carlo seed determinism + band shape.
+Covers fill lag, sizing, stops, drawdown halt, momentum / mean-reversion, Monte Carlo, **walk-forward split correctness**, and **benchmark series alignment**.
 
 ## Repo layout
 
@@ -166,10 +198,11 @@ frontend/        # React + Vite + TypeScript
 | Done | Deferred |
 |------|----------|
 | Buy-and-hold, momentum, mean reversion | Postgres / auth |
-| Configure + Results + Compare UI | Paid data vendors |
-| Backtest + compare API + SQLite | Shorts / leverage |
-| Risk guardrails (size / stop / DD halt) | Re-apply stops on MC paths |
-| Monte Carlo bootstrap / block-bootstrap + bands | Background job worker (if paths get heavy) |
+| Configure + Results + Compare + Saved runs | Paid data vendors |
+| Walk-forward IS/OOS + SPY (override) benchmark | Shorts / leverage |
+| Config presets + named runs (SQLite) | Re-apply stops on MC paths |
+| Risk guardrails + Monte Carlo bands | Background job worker (if paths get heavy) |
+| Parameter auto-search / optimizer UI | — |
 
 ## License
 

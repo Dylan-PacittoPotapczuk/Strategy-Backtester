@@ -3,8 +3,10 @@ import type {
   BacktestResponse,
   CompareRequest,
   CompareResponse,
+  ConfigPreset,
   MonteCarloRequest,
   MonteCarloResponse,
+  RunSummary,
 } from './types'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
@@ -50,6 +52,56 @@ export async function getBacktest(id: string): Promise<BacktestResponse> {
     throw new Error(`Failed to load backtest ${id}`)
   }
   return res.json()
+}
+
+export async function listRunSummaries(limit = 30): Promise<RunSummary[]> {
+  const res = await fetch(`${API_BASE}/api/runs?limit=${limit}`)
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
+  return res.json()
+}
+
+export async function renameBacktest(id: string, name: string): Promise<BacktestResponse> {
+  const res = await fetch(`${API_BASE}/api/backtests/${id}/name`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
+  return res.json()
+}
+
+export async function listPresets(): Promise<ConfigPreset[]> {
+  const res = await fetch(`${API_BASE}/api/presets`)
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
+  return res.json()
+}
+
+export async function createPreset(
+  name: string,
+  config: Record<string, unknown>,
+): Promise<ConfigPreset> {
+  const res = await fetch(`${API_BASE}/api/presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config }),
+  })
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
+  return res.json()
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/presets/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
 }
 
 export async function runMonteCarlo(

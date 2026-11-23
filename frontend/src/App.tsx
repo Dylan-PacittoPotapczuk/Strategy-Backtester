@@ -2,6 +2,7 @@ import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import { ComparePage } from './pages/ComparePage'
 import { ConfigurePage } from './pages/ConfigurePage'
 import { ResultsPage } from './pages/ResultsPage'
+import { SavedRunsPage } from './pages/SavedRunsPage'
 import './App.css'
 
 export default function App() {
@@ -13,7 +14,9 @@ export default function App() {
             <span className="brand-mark" aria-hidden />
             <div>
               <div className="brand-name">Strategy Backtester</div>
-              <div className="brand-sub">Historical test with risk limits · Phase C</div>
+              <div className="brand-sub">
+                Historical test with risk limits · walk-forward · benchmarks
+              </div>
             </div>
           </div>
           <nav>
@@ -21,6 +24,7 @@ export default function App() {
               Configure
             </NavLink>
             <NavLink to="/compare">Compare</NavLink>
+            <NavLink to="/runs">Saved runs</NavLink>
           </nav>
         </header>
         <main>
@@ -28,6 +32,7 @@ export default function App() {
             <Route path="/" element={<ConfigurePage />} />
             <Route path="/results/:runId" element={<ResultsPage />} />
             <Route path="/compare" element={<ComparePage />} />
+            <Route path="/runs" element={<SavedRunsPage />} />
           </Routes>
         </main>
         <footer className="foot">

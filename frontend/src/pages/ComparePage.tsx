@@ -12,6 +12,15 @@ import {
 } from 'recharts'
 import { runCompare } from '../api'
 import { FieldLabel, HeadingWithHelp, HelpTip } from '../components/HelpTip'
+import {
+  DEFAULT_BENCHMARK,
+  DEFAULT_WALK_FORWARD,
+  WalkForwardBenchmarkFields,
+  toBenchmarkPayload,
+  toWalkForwardPayload,
+  type BenchmarkForm,
+  type WalkForwardForm,
+} from '../components/WalkForwardBenchmarkFields'
 import { DEFINITIONS } from '../copy'
 import { formatDate, formatDateShort, num, pct, usd } from '../format'
 import {
@@ -26,10 +35,11 @@ import {
 } from '../strategyMeta'
 import type { BacktestResponse, CompareRequest, StrategyType } from '../types'
 
-const COLORS: Record<StrategyType, string> = {
+const COLORS: Record<StrategyType | 'benchmark', string> = {
   buy_and_hold: '#0f6e56',
   momentum: '#1d4f91',
   mean_reversion: '#9a3412',
+  benchmark: '#6b7280',
 }
 
 const defaultForm = {
@@ -53,6 +63,8 @@ export function ComparePage() {
   })
   const [momentum, setMomentum] = useState<MomentumParams>(DEFAULT_MOMENTUM)
   const [meanRev, setMeanRev] = useState<MeanReversionParams>(DEFAULT_MEAN_REVERSION)
+  const [walkForward, setWalkForward] = useState<WalkForwardForm>(DEFAULT_WALK_FORWARD)
+  const [benchmark, setBenchmark] = useState<BenchmarkForm>(DEFAULT_BENCHMARK)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [runs, setRuns] = useState<BacktestResponse[] | null>(null)
@@ -125,6 +137,8 @@ export function ComparePage() {
           slippage_bps: Number(form.slippage_bps),
           commission_per_trade: Number(form.commission_per_trade),
         },
+        walk_forward: toWalkForwardPayload(walkForward),
+        benchmark: toBenchmarkPayload(benchmark),
       }
       const result = await runCompare(body)
       setRuns(result.runs)
@@ -146,10 +160,23 @@ export function ComparePage() {
         byDate.set(pt.date, row)
       }
     }
+    const benchCurve = runs.find((r) => r.benchmark?.equity_curve?.length)?.benchmark
+    if (benchCurve?.equity_curve) {
+      for (const pt of benchCurve.equity_curve) {
+        const row = byDate.get(pt.date) ?? { date: pt.date }
+        row.benchmark = Math.round(pt.equity * 100) / 100
+        byDate.set(pt.date, row)
+      }
+    }
     return Array.from(byDate.values()).sort((a, b) =>
       String(a.date).localeCompare(String(b.date)),
     )
   }, [runs])
+
+  const showBenchmark = Boolean(runs?.some((r) => r.benchmark?.enabled))
+  const showWalkForward = Boolean(runs?.some((r) => r.walk_forward?.enabled))
+  const benchSymbol =
+    runs?.find((r) => r.benchmark?.symbol)?.benchmark?.symbol ?? benchmark.symbol
 
   return (
     <section className="panel compare">
@@ -418,6 +445,13 @@ export function ComparePage() {
           )}
         </fieldset>
 
+        <WalkForwardBenchmarkFields
+          walkForward={walkForward}
+          setWalkForward={setWalkForward}
+          benchmark={benchmark}
+          setBenchmark={setBenchmark}
+        />
+
         {loading && (
           <div className="info-banner" role="status">
             Running comparison… Each strategy uses the same market data and risk limits.
@@ -449,7 +483,9 @@ export function ComparePage() {
               className="section-title"
             />
             <p className="chart-caption" id="compare-equity">
-              Overlay of each selected strategy on the shared setup. Colors match the table below.
+              Overlay of each selected strategy on the shared setup
+              {showBenchmark ? `, plus ${benchSymbol} buy-and-hold` : ''}. Colors match the table
+              below.
             </p>
             <div className="chart-frame chart-frame-primary">
               <ResponsiveContainer width="100%" height={340}>
@@ -469,11 +505,19 @@ export function ComparePage() {
                   <Tooltip
                     formatter={(value, name) => [
                       usd(Number(value)),
-                      strategyLabel(String(name) as StrategyType),
+                      String(name) === 'benchmark'
+                        ? `${benchSymbol} buy & hold`
+                        : strategyLabel(String(name) as StrategyType),
                     ]}
                     labelFormatter={(l) => formatDate(String(l))}
                   />
-                  <Legend formatter={(value) => strategyLabel(value as StrategyType)} />
+                  <Legend
+                    formatter={(value) =>
+                      value === 'benchmark'
+                        ? `${benchSymbol} buy & hold`
+                        : strategyLabel(value as StrategyType)
+                    }
+                  />
                   {runs.map((run) => {
                     const type = run.request.strategy.type
                     return (
@@ -489,6 +533,18 @@ export function ComparePage() {
                       />
                     )
                   })}
+                  {showBenchmark && (
+                    <Line
+                      type="monotone"
+                      dataKey="benchmark"
+                      name="benchmark"
+                      stroke={COLORS.benchmark}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                      dot={false}
+                      connectNulls
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -515,6 +571,30 @@ export function ComparePage() {
                         <HelpTip definition={DEFINITIONS.total_return} />
                       </span>
                     </th>
+                    {showWalkForward && (
+                      <>
+                        <th>
+                          <span className="th-with-help">
+                            In-sample
+                            <HelpTip definition={DEFINITIONS.metrics_in_sample} />
+                          </span>
+                        </th>
+                        <th>
+                          <span className="th-with-help">
+                            Out-of-sample
+                            <HelpTip definition={DEFINITIONS.metrics_out_of_sample} />
+                          </span>
+                        </th>
+                      </>
+                    )}
+                    {showBenchmark && (
+                      <th>
+                        <span className="th-with-help">
+                          Excess vs {benchSymbol}
+                          <HelpTip definition={DEFINITIONS.excess_return} />
+                        </span>
+                      </th>
+                    )}
                     <th>
                       <span className="th-with-help">
                         Risk-adjusted
@@ -547,6 +627,8 @@ export function ComparePage() {
                     const m = run.metrics
                     const type = run.request.strategy.type
                     if (!m) return null
+                    const isRet = run.walk_forward?.metrics_in_sample?.total_return
+                    const oosRet = run.walk_forward?.metrics_out_of_sample?.total_return
                     return (
                       <tr key={run.id}>
                         <td>
@@ -560,6 +642,23 @@ export function ComparePage() {
                         <td className={m.total_return >= 0 ? 'buy' : 'sell'}>
                           {pct(m.total_return)}
                         </td>
+                        {showWalkForward && (
+                          <>
+                            <td>{isRet != null ? pct(isRet) : '—'}</td>
+                            <td>{oosRet != null ? pct(oosRet) : '—'}</td>
+                          </>
+                        )}
+                        {showBenchmark && (
+                          <td
+                            className={
+                              (run.benchmark?.excess_return ?? 0) >= 0 ? 'buy' : 'sell'
+                            }
+                          >
+                            {run.benchmark?.excess_return != null
+                              ? pct(run.benchmark.excess_return)
+                              : '—'}
+                          </td>
+                        )}
                         <td>{num(m.sharpe)}</td>
                         <td className="sell">{pct(m.max_drawdown)}</td>
                         <td>{m.num_stop_losses}</td>
@@ -576,10 +675,11 @@ export function ComparePage() {
               </table>
             </div>
             <p className="hint">
-              Comparing many parameter choices on the same history can overfit — treat this as
-              exploration, not a guarantee of future results. Open <strong>View run</strong> on any
-              row to see full results and run a Monte Carlo forward projection from that
-              strategy’s returns.
+              {showWalkForward
+                ? 'Out-of-sample columns use the shared holdout window. '
+                : 'Comparing many parameter choices on the same history can overfit — enable walk-forward for a holdout. '}
+              Open <strong>View run</strong> on any row for full results, benchmark detail, and Monte
+              Carlo.
             </p>
           </section>
         </div>

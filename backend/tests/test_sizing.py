@@ -10,6 +10,7 @@ from app.engine.risk import RiskEngine
 from app.engine.runner import BacktestRunner
 from app.engine.strategy import TargetWeight
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -60,7 +61,8 @@ def test_equal_weight_two_symbols_respects_cap(start: date) -> None:
             sizing_mode="equal_weight",
         ),
         costs=CostConfig(slippage_bps=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     buys = [
         t

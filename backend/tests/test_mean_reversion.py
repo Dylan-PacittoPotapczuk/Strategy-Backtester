@@ -10,6 +10,7 @@ from app.data.adapter import FixtureDataAdapter
 from app.engine.runner import BacktestRunner
 from app.engine.strategy import MeanReversionStrategy
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -106,7 +107,8 @@ def test_mean_reversion_no_lookahead_on_fill(start: date) -> None:
             max_portfolio_drawdown_pct=0.99,
         ),
         costs=CostConfig(slippage_bps=0.0, commission_per_trade=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     buys = [
         t

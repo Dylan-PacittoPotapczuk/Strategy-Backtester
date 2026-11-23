@@ -31,6 +31,18 @@ export interface StrategyConfig {
   symbols: string[]
 }
 
+export interface WalkForwardConfig {
+  enabled: boolean
+  mode: 'percent' | 'date'
+  train_pct: number
+  split_date?: string | null
+}
+
+export interface BenchmarkConfig {
+  enabled: boolean
+  symbol: string
+}
+
 export interface BacktestRequest {
   symbols: string[]
   start_date: string
@@ -40,6 +52,9 @@ export interface BacktestRequest {
   strategy: StrategyConfig
   guardrails: GuardrailConfig
   costs: CostConfig
+  walk_forward?: WalkForwardConfig
+  benchmark?: BenchmarkConfig
+  name?: string | null
 }
 
 export interface CompareRequest {
@@ -51,6 +66,8 @@ export interface CompareRequest {
   strategies: StrategyConfig[]
   guardrails: GuardrailConfig
   costs: CostConfig
+  walk_forward?: WalkForwardConfig
+  benchmark?: BenchmarkConfig
 }
 
 export interface Trade {
@@ -88,11 +105,34 @@ export interface Metrics {
   trading_days: number
 }
 
+export interface WalkForwardResult {
+  enabled: boolean
+  mode?: 'percent' | 'date' | null
+  split_date?: string | null
+  train_pct_used?: number | null
+  train_trading_days: number
+  test_trading_days: number
+  metrics_in_sample?: Metrics | null
+  metrics_out_of_sample?: Metrics | null
+  warning?: string | null
+}
+
+export interface BenchmarkResult {
+  enabled: boolean
+  symbol: string
+  equity_curve: EquityPoint[]
+  metrics?: Metrics | null
+  excess_return?: number | null
+  excess_cagr?: number | null
+  excess_sharpe?: number | null
+}
+
 export interface BacktestResponse {
   id: string
   created_at: string
   status: 'pending' | 'running' | 'done' | 'failed'
   request: BacktestRequest
+  name?: string | null
   equity_curve: EquityPoint[]
   trades: Trade[]
   metrics?: Metrics | null
@@ -100,10 +140,35 @@ export interface BacktestResponse {
   error?: string | null
   dd_halted: boolean
   dd_halt_date?: string | null
+  walk_forward?: WalkForwardResult | null
+  benchmark?: BenchmarkResult | null
+  no_oos_warning?: string | null
 }
 
 export interface CompareResponse {
   runs: BacktestResponse[]
+}
+
+export interface RunSummary {
+  id: string
+  created_at: string
+  name?: string | null
+  status: string
+  strategy_type: string
+  symbols: string[]
+  start_date: string
+  end_date: string
+  total_return?: number | null
+  walk_forward_enabled: boolean
+  benchmark_symbol?: string | null
+}
+
+export interface ConfigPreset {
+  id: string
+  name: string
+  created_at: string
+  updated_at: string
+  config: Record<string, unknown>
 }
 
 export interface MonteCarloRequest {

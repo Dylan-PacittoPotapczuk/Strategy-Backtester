@@ -87,6 +87,43 @@ export const DEFINITIONS = {
     'Share of simulated paths that finished worth less than they started — a rough chance of a loss over the horizon.',
   mc_assumptions:
     'Forward paths reuse the backtest’s risk-constrained daily returns. Stops and drawdown halts are not re-run on each fake path; treat bands as “similar behavior continues,” not a full re-simulation of risk rules.',
+  walk_forward:
+    'Split the test into an earlier “in-sample” stretch and a later “out-of-sample” holdout so you can see whether results hold up after the period used for judgment.',
+  walk_forward_enabled:
+    'When on, metrics are reported separately for the early (in-sample) window and the later (out-of-sample) window. Rules stay the same — this does not auto-search parameters.',
+  walk_forward_mode:
+    'Percent uses a share of trading days for the early window; date uses a calendar cutover you pick.',
+  train_pct:
+    'Share of trading days treated as in-sample (early). The rest is the out-of-sample holdout.',
+  split_date:
+    'First calendar day of the out-of-sample window. Days before this are in-sample.',
+  metrics_in_sample:
+    'Performance measured only on the early (train) window of the backtest.',
+  metrics_out_of_sample:
+    'Performance measured only on the later (test) holdout window — the cleaner check against overfitting.',
+  no_oos_warning:
+    'You are viewing full-history results with no holdout. Tuning knobs on the whole period can look better than they will on unseen data.',
+  benchmark:
+    'A simple buy-and-hold reference (default SPY) plotted beside your strategy so you can see if the rules beat doing nothing fancy.',
+  benchmark_enabled:
+    'When on, the Results chart always overlays buy-and-hold of the benchmark symbol on the same dates and starting cash.',
+  benchmark_symbol:
+    'Ticker used for the buy-and-hold reference line (for example SPY or QQQ).',
+  excess_return:
+    'Strategy total return minus benchmark total return over the same window — positive means you beat the reference.',
+  excess_cagr:
+    'Strategy average yearly return minus the benchmark’s — how much extra annualized growth versus buy-and-hold.',
+  excess_sharpe:
+    'Strategy risk-adjusted return minus the benchmark’s — positive means better reward-for-risk than the reference.',
+  benchmark_equity:
+    'Dollar value over time of buying the benchmark once and holding it (same start cash as your test).',
+  saved_runs:
+    'Recent backtests stored on this machine (SQLite). Open one to revisit results; optionally give it a name.',
+  run_name:
+    'A short label you choose so this run is easy to find in the saved list.',
+  presets:
+    'Named snapshots of the Configure form (symbols, dates, strategy, risk, costs, walk-forward, benchmark). Load one to restore settings without retyping.',
+  preset_name: 'What to call this saved setup so you can load it later.',
 } as const
 
 export type DefinitionKey = keyof typeof DEFINITIONS
