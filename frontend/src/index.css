@@ -1,0 +1,44 @@
+:root {
+  --bg: #e8efe9;
+  --surface: #f7faf7;
+  --input: #ffffff;
+  --ink: #14201c;
+  --muted: #5a6b63;
+  --line: rgba(20, 32, 28, 0.1);
+  --line-strong: rgba(20, 32, 28, 0.18);
+  --accent: #0f6e56;
+  --accent-strong: #0b5744;
+  --accent-ink: #0a4637;
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 8% -10%, rgba(15, 110, 86, 0.16), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(196, 163, 90, 0.18), transparent 50%),
+    linear-gradient(180deg, #f3f7f3 0%, var(--bg) 40%, #dfe8e1 100%);
+  background-attachment: fixed;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent-ink);
+}
