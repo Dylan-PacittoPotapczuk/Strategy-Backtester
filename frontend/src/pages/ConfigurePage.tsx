@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { runBacktest } from '../api'
+import { FieldLabel, HelpTip } from '../components/HelpTip'
+import { DEFINITIONS } from '../copy'
 import type { BacktestRequest } from '../types'
 
 const defaultForm = {
@@ -35,7 +37,10 @@ export function ConfigurePage() {
         .map((s) => s.trim().toUpperCase())
         .filter(Boolean)
       if (symbols.length === 0) {
-        throw new Error('Enter at least one symbol')
+        throw new Error('Enter at least one symbol (for example SPY or QQQ).')
+      }
+      if (form.start_date > form.end_date) {
+        throw new Error('Start date must be on or before the end date.')
       }
       const body: BacktestRequest = {
         symbols,
@@ -72,46 +77,44 @@ export function ConfigurePage() {
   return (
     <section className="panel configure">
       <header className="panel-head">
-        <h1>Configure run</h1>
+        <h1>Set up your test</h1>
         <p>
-          Buy-and-hold equities/ETFs with position sizing, per-trade stop, and portfolio drawdown
-          halt. Fills at next open; ~{form.slippage_bps} bps slippage.
+          See how a simple buy-and-hold portfolio would have done, with risk limits that can cut
+          position size or sell when losses get large.
         </p>
       </header>
 
       <form className="config-form" onSubmit={onSubmit}>
-        <fieldset>
-          <legend>Universe</legend>
-          <label>
-            Symbols
+        <fieldset className="config-section">
+          <legend>1 · Setup</legend>
+          <p className="section-lead">What to buy, when to test, and how much cash to start with.</p>
+          <FieldLabel text="Stocks / ETFs" definition={DEFINITIONS.symbols}>
             <input
               value={form.symbols}
               onChange={(e) => update('symbols', e.target.value)}
               placeholder="SPY, QQQ, AAPL"
               required
+              autoComplete="off"
             />
-          </label>
+          </FieldLabel>
           <div className="row">
-            <label>
-              Start
+            <FieldLabel text="Start date" definition={DEFINITIONS.start_date}>
               <input
                 type="date"
                 value={form.start_date}
                 onChange={(e) => update('start_date', e.target.value)}
                 required
               />
-            </label>
-            <label>
-              End
+            </FieldLabel>
+            <FieldLabel text="End date" definition={DEFINITIONS.end_date}>
               <input
                 type="date"
                 value={form.end_date}
                 onChange={(e) => update('end_date', e.target.value)}
                 required
               />
-            </label>
-            <label>
-              Initial cash (USD)
+            </FieldLabel>
+            <FieldLabel text="Starting cash (USD)" definition={DEFINITIONS.initial_cash}>
               <input
                 type="number"
                 min={1}
@@ -120,21 +123,28 @@ export function ConfigurePage() {
                 onChange={(e) => update('initial_cash', Number(e.target.value))}
                 required
               />
-            </label>
+            </FieldLabel>
+          </div>
+
+          <div className="strategy-block">
+            <span className="label-row">
+              <span className="label-text">Strategy</span>
+              <HelpTip definition={DEFINITIONS.strategy} />
+            </span>
+            <div className="strategy-pill">Buy &amp; hold · equal weight · no rebalancing</div>
+            <p className="hint">
+              Buys at the start and holds unless a risk rule sells. Other strategies come later.
+            </p>
           </div>
         </fieldset>
 
-        <fieldset>
-          <legend>Strategy</legend>
-          <div className="strategy-pill">Buy &amp; hold · equal weight · never rebalance</div>
-          <p className="hint">Momentum and mean reversion arrive in Phase B.</p>
-        </fieldset>
-
-        <fieldset>
-          <legend>Risk guardrails</legend>
+        <fieldset className="config-section">
+          <legend>2 · Risk limits</legend>
+          <p className="section-lead">
+            Guardrails that cap how much you put in one name and when losses force a sell or pause.
+          </p>
           <div className="row">
-            <label>
-              Max position %
+            <FieldLabel text="Position size limit (%)" definition={DEFINITIONS.max_position_pct}>
               <input
                 type="number"
                 min={1}
@@ -143,9 +153,8 @@ export function ConfigurePage() {
                 value={form.max_position_pct}
                 onChange={(e) => update('max_position_pct', Number(e.target.value))}
               />
-            </label>
-            <label>
-              Per-trade loss limit %
+            </FieldLabel>
+            <FieldLabel text="Per-trade loss limit (%)" definition={DEFINITIONS.max_trade_loss_pct}>
               <input
                 type="number"
                 min={1}
@@ -154,9 +163,11 @@ export function ConfigurePage() {
                 value={form.max_trade_loss_pct}
                 onChange={(e) => update('max_trade_loss_pct', Number(e.target.value))}
               />
-            </label>
-            <label>
-              Portfolio DD limit %
+            </FieldLabel>
+            <FieldLabel
+              text="Whole-portfolio drop limit (%)"
+              definition={DEFINITIONS.max_portfolio_drawdown_pct}
+            >
               <input
                 type="number"
                 min={1}
@@ -165,28 +176,34 @@ export function ConfigurePage() {
                 value={form.max_portfolio_drawdown_pct}
                 onChange={(e) => update('max_portfolio_drawdown_pct', Number(e.target.value))}
               />
-            </label>
+            </FieldLabel>
           </div>
           <p className="hint">
-            On DD breach, new risk is halted; open positions are not auto-flattened.
+            If the portfolio hits the drawdown limit, new buys stop. Open positions are not sold
+            automatically in this phase.
           </p>
         </fieldset>
 
-        <fieldset>
-          <legend>Costs</legend>
+        <fieldset className="config-section">
+          <legend>3 · Trading costs</legend>
+          <p className="section-lead">
+            Small costs applied on each fill so results are not unrealistically perfect.
+          </p>
           <div className="row">
-            <label>
-              Slippage (bps)
+            <FieldLabel text="Slippage" definition={DEFINITIONS.slippage}>
               <input
                 type="number"
                 min={0}
                 step={1}
                 value={form.slippage_bps}
                 onChange={(e) => update('slippage_bps', Number(e.target.value))}
+                aria-describedby="slippage-unit"
               />
-            </label>
-            <label>
-              Commission ($ / trade)
+              <span id="slippage-unit" className="field-unit">
+                in basis points (1 bp = 0.01%)
+              </span>
+            </FieldLabel>
+            <FieldLabel text="Commission ($ per trade)" definition={DEFINITIONS.commission}>
               <input
                 type="number"
                 min={0}
@@ -194,11 +211,33 @@ export function ConfigurePage() {
                 value={form.commission_per_trade}
                 onChange={(e) => update('commission_per_trade', Number(e.target.value))}
               />
-            </label>
+            </FieldLabel>
           </div>
+          <p className="hint fill-hint">
+            <span className="label-row inline">
+              <span>Fills use the next day’s open</span>
+              <HelpTip definition={DEFINITIONS.next_open_fill} />
+            </span>
+            <span className="hint-sep">·</span>
+            <span>
+              Default slippage is {form.slippage_bps} basis points (
+              {(form.slippage_bps / 100).toFixed(2)}% of the trade price).
+            </span>
+          </p>
         </fieldset>
 
-        {error && <div className="error-banner" role="alert">{error}</div>}
+        {loading && (
+          <div className="info-banner" role="status">
+            Running your backtest… This usually takes a few seconds. Stay on this page.
+          </div>
+        )}
+
+        {error && (
+          <div className="error-banner" role="alert">
+            <strong>Could not run the test.</strong> {error} Check your symbols and dates, then try
+            again.
+          </div>
+        )}
 
         <div className="actions">
           <button type="submit" className="btn-primary" disabled={loading}>
