@@ -118,3 +118,63 @@ export async function runMonteCarlo(
   }
   return res.json()
 }
+
+function withMcQuery(path: string, mcId?: string | null): string {
+  if (!mcId) return path
+  const q = new URLSearchParams({ mc_id: mcId })
+  return `${path}?${q.toString()}`
+}
+
+export function exportCsvUrl(runId: string, mcId?: string | null): string {
+  return `${API_BASE}${withMcQuery(`/api/backtests/${runId}/export.csv`, mcId)}`
+}
+
+export function exportPdfUrl(runId: string, mcId?: string | null): string {
+  return `${API_BASE}${withMcQuery(`/api/backtests/${runId}/export.pdf`, mcId)}`
+}
+
+async function saveBlobResponse(res: Response, fallbackName: string): Promise<void> {
+  if (!res.ok) {
+    throw new Error(await readError(res))
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename="([^"]+)"/.exec(cd)
+  const filename = match?.[1] ?? fallbackName
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+export async function downloadBacktestCsv(runId: string, mcId?: string | null): Promise<void> {
+  const res = await fetch(exportCsvUrl(runId, mcId))
+  await saveBlobResponse(res, `backtest-${runId}-export.zip`)
+}
+
+export async function downloadBacktestPdf(runId: string, mcId?: string | null): Promise<void> {
+  const res = await fetch(exportPdfUrl(runId, mcId))
+  await saveBlobResponse(res, `backtest-${runId}-report.pdf`)
+}
+
+export async function downloadCompareCsv(runs: BacktestResponse[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/compare/export.csv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runs }),
+  })
+  await saveBlobResponse(res, 'compare-export.zip')
+}
+
+export async function downloadComparePdf(runs: BacktestResponse[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/compare/export.pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runs }),
+  })
+  await saveBlobResponse(res, 'compare-report.pdf')
+}

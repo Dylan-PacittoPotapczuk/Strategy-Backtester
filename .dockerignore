@@ -1,0 +1,15 @@
+.git
+.github
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/venv
+**/node_modules
+frontend/dist
+backend/cache
+*.sqlite
+*.log
+.DS_Store
+README.md
+**/*.md
+!frontend/README.md

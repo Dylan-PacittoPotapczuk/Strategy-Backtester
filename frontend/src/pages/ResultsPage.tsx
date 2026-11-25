@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts'
 import { getBacktest, renameBacktest } from '../api'
+import { ExportButtons } from '../components/ExportButtons'
 import { HeadingWithHelp, HelpTip } from '../components/HelpTip'
 import { MonteCarloSection } from '../components/MonteCarloSection'
 import {
@@ -35,6 +36,7 @@ export function ResultsPage() {
   const [loading, setLoading] = useState(!cached || cached.id !== runId)
   const [nameDraft, setNameDraft] = useState('')
   const [renaming, setRenaming] = useState(false)
+  const [mcId, setMcId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!runId || (result && result.id === runId)) {
@@ -172,6 +174,8 @@ export function ResultsPage() {
           </Link>
         </div>
       </header>
+
+      <ExportButtons mode="results" runId={result.id} mcId={mcId} />
 
       {result.dd_halted && (
         <div className="warn-banner">
@@ -463,7 +467,11 @@ export function ResultsPage() {
         </div>
       </section>
 
-      <MonteCarloSection backtestId={result.id} defaultStartEquity={m.final_equity} />
+      <MonteCarloSection
+        backtestId={result.id}
+        defaultStartEquity={m.final_equity}
+        onResult={(mc) => setMcId(mc?.id ?? null)}
+      />
 
       <section className="results-section trades-block" aria-labelledby="trades-heading">
         <HeadingWithHelp

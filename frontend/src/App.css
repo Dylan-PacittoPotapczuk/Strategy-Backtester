@@ -847,6 +847,42 @@ td.note {
   color: #5a6b63;
 }
 
+.export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem 1.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(15, 110, 86, 0.06), rgba(244, 247, 245, 0.9));
+}
+
+.export-bar-head {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.export-bar-lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  max-width: 36rem;
+}
+
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.export-actions .btn-ghost {
+  gap: 0.35rem;
+}
+
 .head-actions {
   display: flex;
   gap: 0.5rem;

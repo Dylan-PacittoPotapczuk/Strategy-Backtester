@@ -4,9 +4,17 @@ Historical equity/ETF backtester with risk guardrails, **walk-forward / out-of-s
 
 **Stack:** Python 3.11+ / FastAPI engine · React + Vite + TypeScript UI · SQLite run store · free Yahoo Finance EOD data (chart API; same free source as yfinance)
 
-## Quick start
+## Quick start (local Docker — one command)
 
-### Backend
+Requires [Docker](https://docs.docker.com/get-docker/) + Docker Compose v2.
+
+```bash
+docker compose up --build
+```
+
+Open **http://127.0.0.1:8000** — the React UI and FastAPI API are served from one container (SQLite under a named volume). Health: http://127.0.0.1:8000/api/health
+
+### Backend (dev without Docker)
 
 ```bash
 cd backend
@@ -18,7 +26,7 @@ uvicorn app.main:app --reload --port 8000
 
 API docs: http://127.0.0.1:8000/docs
 
-### Frontend
+### Frontend (dev without Docker)
 
 ```bash
 cd frontend
@@ -125,9 +133,64 @@ curl -s -X POST http://127.0.0.1:8000/api/compare \
 ### UI flow
 
 1. **Configure** → strategy + params (“?” definitions), symbols, dates, cash, guardrails, costs, optional walk-forward split, benchmark symbol, optional run name / presets → **Run backtest**.
-2. **Results** → equity vs benchmark, drawdown, full + IS/OOS metrics when walk-forward is on, excess-return strip, trade blotter, Monte Carlo. Warns when tuning without OOS.
-3. **Compare** → shared setup including walk-forward + benchmark; overlay curves + metrics table (IS/OOS + excess columns when enabled).
+2. **Results** → equity vs benchmark, drawdown, full + IS/OOS metrics when walk-forward is on, excess-return strip, trade blotter, Monte Carlo. **Download CSV / PDF** risk report. Warns when tuning without OOS.
+3. **Compare** → shared setup including walk-forward + benchmark; overlay curves + metrics table; **Download CSV / PDF** for the comparison.
 4. **Saved runs** → reopen recent SQLite-backed runs; rename; load Configure presets from the Configure screen.
+
+## Risk report export
+
+From **Results** (and **Compare** after a run):
+
+| Control | What you get |
+|---------|----------------|
+| **Download CSV** | ZIP of CSV tables: `metrics.csv`, `equity.csv`, `trades.csv`, plus `mc_summary.csv` / `mc_bands.csv` when a Monte Carlo run exists for that backtest (latest, or the one just run in the UI). Compare exports `compare_metrics.csv` plus per-strategy equity/trades. |
+| **Download PDF** | Short summary: key metrics, equity sketch (single-run), risk/cost settings, Monte Carlo summary if present, and execution assumptions. |
+
+API (same payloads the UI uses):
+
+```bash
+# After a completed backtest
+curl -OJ "http://127.0.0.1:8000/api/backtests/RUN_ID/export.csv"
+curl -OJ "http://127.0.0.1:8000/api/backtests/RUN_ID/export.pdf"
+# Optional: pin a Monte Carlo id
+curl -OJ "http://127.0.0.1:8000/api/backtests/RUN_ID/export.csv?mc_id=MC_ID"
+```
+
+PDF generation uses **reportlab** (free). CSV uses the Python standard library.
+
+## Deploy (free tier)
+
+The app is a single Docker image: FastAPI serves `/api/*` and the built React SPA from `STATIC_DIR`. No paid market-data keys.
+
+### Option A — Docker on your machine (always works)
+
+```bash
+docker compose up --build
+```
+
+Then open http://127.0.0.1:8000
+
+If live Yahoo Finance fetches fail inside the container (`Network is unreachable`), either:
+
+- uncomment `network_mode: host` in `docker-compose.yml` (Linux), or  
+- run the backend on the host (`uvicorn` as above) so it shares your normal network, or  
+- copy a populated `backend/cache/ohlcv.sqlite` into the `sb-data` volume so demos use cached EOD bars.
+
+### Option B — Render free Web Service (public URL)
+
+1. Push this repo to GitHub (already done if you forked/cloned from the project remote).
+2. Open [https://dashboard.render.com](https://dashboard.render.com) and sign in (free account is enough).
+3. Click **New +** → **Blueprint** → connect the GitHub repo that contains `render.yaml`, **or** **New +** → **Web Service** → pick the repo → **Docker** runtime.
+4. Leave the default Dockerfile path (repo root). Plan: **Free**.
+5. Confirm env vars (Blueprint sets them): `SERVE_FRONTEND=1`, `STATIC_DIR=/app/static`.
+6. Click **Create Web Service** / **Apply**. Wait for the first build (~several minutes).
+7. Open the `*.onrender.com` URL Render shows. Cold starts on the free tier can take ~30–60s after idle.
+
+**Note:** Free Render disks are ephemeral — SQLite runs reset when the service sleeps or redeploys. That is fine for a public demo; use local Docker Compose with the `sb-data` volume for persistence.
+
+**Credentials:** only a free Render account linked to GitHub. No API keys for Yahoo Finance EOD data.
+
+This environment could not log into Render / Fly / Railway with a user account, so no public demo URL was published from CI. Use Option A locally or Option B with your own Render login.
 
 ## Strategies
 
@@ -182,15 +245,16 @@ cd backend
 python3 -m pytest -q
 ```
 
-Covers fill lag, sizing, stops, drawdown halt, momentum / mean-reversion, Monte Carlo, **walk-forward split correctness**, and **benchmark series alignment**.
+Covers fill lag, sizing, stops, drawdown halt, momentum / mean-reversion, Monte Carlo, **walk-forward**, **benchmark alignment**, and **CSV/PDF export** (CSV contents + PDF smoke).
 
 ## Repo layout
 
 ```
-backend/
-  app/           # FastAPI + engine + data adapters
-  tests/         # Unit tests (fixture data, no network)
-frontend/        # React + Vite + TypeScript
+backend/           # FastAPI + engine + data adapters + export
+frontend/          # React + Vite + TypeScript
+Dockerfile         # Multi-stage: build UI, serve from uvicorn
+docker-compose.yml # Local one-command demo
+render.yaml        # Render free-tier Blueprint
 ```
 
 ## Phase status
@@ -202,6 +266,8 @@ frontend/        # React + Vite + TypeScript
 | Walk-forward IS/OOS + SPY (override) benchmark | Shorts / leverage |
 | Config presets + named runs (SQLite) | Re-apply stops on MC paths |
 | Risk guardrails + Monte Carlo bands | Background job worker (if paths get heavy) |
+| CSV + PDF risk report export | — |
+| Docker Compose + Render free deploy config | Hosted URL needs your free Render login |
 | Parameter auto-search / optimizer UI | — |
 
 ## License

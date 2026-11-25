@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from app.data.adapter import get_default_adapter
 from app.db import RunStore
 from app.engine.monte_carlo import run_monte_carlo
 from app.engine.runner import BacktestRunner
+from app.export import (
+    build_backtest_csv_zip,
+    build_backtest_pdf,
+    build_compare_csv_zip,
+    build_compare_pdf,
+)
 from app.models.schemas import (
     BacktestRequest,
     BacktestResponse,
     BacktestStatus,
+    CompareExportRequest,
     CompareRequest,
     CompareResponse,
     ConfigPreset,
@@ -203,3 +212,105 @@ def delete_preset(preset_id: UUID) -> dict:
     if not store.delete_preset(preset_id):
         raise HTTPException(404, "Preset not found")
     return {"ok": True}
+
+
+# --- Risk report export -----------------------------------------------------
+
+
+def _latest_monte_carlo(run_id: UUID) -> Optional[MonteCarloResponse]:
+    mcs = store.list_monte_carlo_for_backtest(run_id, limit=1)
+    return mcs[0] if mcs else None
+
+
+def _resolve_monte_carlo(
+    run_id: UUID,
+    mc_id: Optional[UUID],
+) -> Optional[MonteCarloResponse]:
+    if mc_id is not None:
+        mc = store.get_monte_carlo(mc_id)
+        if not mc:
+            raise HTTPException(404, "Monte Carlo run not found")
+        if mc.backtest_run_id != run_id:
+            raise HTTPException(400, "Monte Carlo run does not belong to this backtest")
+        return mc
+    return _latest_monte_carlo(run_id)
+
+
+@router.get("/backtests/{run_id}/export.csv")
+def export_backtest_csv(
+    run_id: UUID,
+    mc_id: Optional[UUID] = Query(
+        default=None,
+        description="Optional Monte Carlo run to include; defaults to latest if any",
+    ),
+) -> Response:
+    """Download ZIP of CSV files: metrics, equity, trades, and MC summary when present."""
+    run = store.get(run_id)
+    if not run:
+        raise HTTPException(404, "Backtest run not found")
+    if run.status != BacktestStatus.DONE:
+        raise HTTPException(400, "Backtest must be completed before export")
+    mc = _resolve_monte_carlo(run_id, mc_id)
+    payload = build_backtest_csv_zip(run, monte_carlo=mc)
+    filename = f"backtest-{run_id}-export.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/backtests/{run_id}/export.pdf")
+def export_backtest_pdf(
+    run_id: UUID,
+    mc_id: Optional[UUID] = Query(
+        default=None,
+        description="Optional Monte Carlo run to include; defaults to latest if any",
+    ),
+) -> Response:
+    """Download a simple PDF summary of key metrics, equity sketch, and assumptions."""
+    run = store.get(run_id)
+    if not run:
+        raise HTTPException(404, "Backtest run not found")
+    if run.status != BacktestStatus.DONE:
+        raise HTTPException(400, "Backtest must be completed before export")
+    mc = _resolve_monte_carlo(run_id, mc_id)
+    payload = build_backtest_pdf(run, monte_carlo=mc)
+    filename = f"backtest-{run_id}-report.pdf"
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/compare/export.csv")
+def export_compare_csv(body: CompareExportRequest) -> Response:
+    """ZIP of side-by-side metrics plus per-strategy equity/trades CSVs."""
+    if not body.runs:
+        raise HTTPException(400, "No runs to export")
+    for run in body.runs:
+        if run.status != BacktestStatus.DONE:
+            raise HTTPException(400, f"Run {run.id} is not completed")
+    payload = build_compare_csv_zip(body.runs)
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="compare-export.zip"'},
+    )
+
+
+@router.post("/compare/export.pdf")
+def export_compare_pdf(body: CompareExportRequest) -> Response:
+    """PDF table of compare metrics plus shared assumptions."""
+    if not body.runs:
+        raise HTTPException(400, "No runs to export")
+    for run in body.runs:
+        if run.status != BacktestStatus.DONE:
+            raise HTTPException(400, f"Run {run.id} is not completed")
+    payload = build_compare_pdf(body.runs)
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="compare-report.pdf"'},
+    )

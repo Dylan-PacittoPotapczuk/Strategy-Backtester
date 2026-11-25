@@ -18,6 +18,7 @@ import type { MonteCarloResponse } from '../types'
 type Props = {
   backtestId: string
   defaultStartEquity: number
+  onResult?: (mc: MonteCarloResponse | null) => void
 }
 
 const DEFAULTS = {
@@ -28,7 +29,7 @@ const DEFAULTS = {
   block_size: 10,
 }
 
-export function MonteCarloSection({ backtestId, defaultStartEquity }: Props) {
+export function MonteCarloSection({ backtestId, defaultStartEquity, onResult }: Props) {
   const [nPaths, setNPaths] = useState(DEFAULTS.n_paths)
   const [horizon, setHorizon] = useState(DEFAULTS.horizon_days)
   const [seed, setSeed] = useState(DEFAULTS.seed)
@@ -51,6 +52,7 @@ export function MonteCarloSection({ backtestId, defaultStartEquity }: Props) {
         block_size: blockBootstrap ? blockSize : undefined,
       })
       setMc(result)
+      onResult?.(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
