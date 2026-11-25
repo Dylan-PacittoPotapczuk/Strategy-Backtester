@@ -10,6 +10,7 @@ from app.engine.risk import RiskEngine
 from app.engine.runner import BacktestRunner
 from app.engine.strategy import TargetWeight
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -73,7 +74,8 @@ def test_dd_halt_in_backtest_keeps_positions(start: date) -> None:
             flatten_on_breach=False,
         ),
         costs=CostConfig(slippage_bps=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     assert result["dd_halted"] is True
     assert result["dd_halt_date"] is not None
@@ -117,7 +119,8 @@ def test_flatten_on_breach_optional(start: date) -> None:
             flatten_on_breach=True,
         ),
         costs=CostConfig(slippage_bps=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     assert result["dd_halted"] is True
     sells = [

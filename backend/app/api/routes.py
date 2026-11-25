@@ -1,4 +1,4 @@
-"""Backtest and Monte Carlo HTTP routes."""
+"""Backtest, compare, Monte Carlo, presets, and saved-run HTTP routes."""
 
 from __future__ import annotations
 
@@ -16,8 +16,13 @@ from app.models.schemas import (
     BacktestStatus,
     CompareRequest,
     CompareResponse,
+    ConfigPreset,
+    ConfigPresetCreate,
+    ConfigPresetUpdate,
     MonteCarloRequest,
     MonteCarloResponse,
+    RunNameUpdate,
+    RunSummary,
 )
 
 router = APIRouter(prefix="/api")
@@ -48,6 +53,9 @@ def _execute_backtest(request: BacktestRequest) -> BacktestResponse:
         run.daily_returns = result["daily_returns"]
         run.dd_halted = result["dd_halted"]
         run.dd_halt_date = result["dd_halt_date"]
+        run.walk_forward = result.get("walk_forward")
+        run.benchmark = result.get("benchmark")
+        run.no_oos_warning = result.get("no_oos_warning")
         run.status = BacktestStatus.DONE
     except Exception as exc:  # noqa: BLE001 — surface as failed run
         run.status = BacktestStatus.FAILED
@@ -79,6 +87,8 @@ def compare_strategies(request: CompareRequest) -> CompareResponse:
             strategy=strat.model_copy(update={"symbols": symbols}),
             guardrails=request.guardrails,
             costs=request.costs,
+            walk_forward=request.walk_forward,
+            benchmark=request.benchmark,
         )
         runs.append(_execute_backtest(bt))
     return CompareResponse(runs=runs)
@@ -95,6 +105,20 @@ def get_backtest(run_id: UUID) -> BacktestResponse:
 @router.get("/backtests", response_model=list[BacktestResponse])
 def list_backtests(limit: int = 20) -> list[BacktestResponse]:
     return store.list_recent(limit=min(limit, 100))
+
+
+@router.get("/runs", response_model=list[RunSummary])
+def list_run_summaries(limit: int = 30) -> list[RunSummary]:
+    """Recent saved runs (name + timestamp + headline fields)."""
+    return store.list_summaries(limit=min(limit, 100))
+
+
+@router.patch("/backtests/{run_id}/name", response_model=BacktestResponse)
+def rename_backtest(run_id: UUID, body: RunNameUpdate) -> BacktestResponse:
+    run = store.rename(run_id, body.name)
+    if not run:
+        raise HTTPException(404, "Backtest run not found")
+    return run
 
 
 @router.post(
@@ -143,3 +167,39 @@ def list_monte_carlo(run_id: UUID, limit: int = 10) -> list[MonteCarloResponse]:
     if not run:
         raise HTTPException(404, "Backtest run not found")
     return store.list_monte_carlo_for_backtest(run_id, limit=min(limit, 50))
+
+
+# --- Config presets ---------------------------------------------------------
+
+
+@router.get("/presets", response_model=list[ConfigPreset])
+def list_presets(limit: int = 50) -> list[ConfigPreset]:
+    return store.list_presets(limit=min(limit, 100))
+
+
+@router.post("/presets", response_model=ConfigPreset)
+def create_preset(body: ConfigPresetCreate) -> ConfigPreset:
+    return store.create_preset(body.name, body.config)
+
+
+@router.get("/presets/{preset_id}", response_model=ConfigPreset)
+def get_preset(preset_id: UUID) -> ConfigPreset:
+    preset = store.get_preset(preset_id)
+    if not preset:
+        raise HTTPException(404, "Preset not found")
+    return preset
+
+
+@router.patch("/presets/{preset_id}", response_model=ConfigPreset)
+def update_preset(preset_id: UUID, body: ConfigPresetUpdate) -> ConfigPreset:
+    preset = store.update_preset(preset_id, name=body.name, config=body.config)
+    if not preset:
+        raise HTTPException(404, "Preset not found")
+    return preset
+
+
+@router.delete("/presets/{preset_id}")
+def delete_preset(preset_id: UUID) -> dict:
+    if not store.delete_preset(preset_id):
+        raise HTTPException(404, "Preset not found")
+    return {"ok": True}

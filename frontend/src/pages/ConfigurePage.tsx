@@ -1,7 +1,16 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { runBacktest } from '../api'
+import { createPreset, deletePreset, listPresets, runBacktest } from '../api'
 import { FieldLabel, HelpTip } from '../components/HelpTip'
+import {
+  DEFAULT_BENCHMARK,
+  DEFAULT_WALK_FORWARD,
+  WalkForwardBenchmarkFields,
+  toBenchmarkPayload,
+  toWalkForwardPayload,
+  type BenchmarkForm,
+  type WalkForwardForm,
+} from '../components/WalkForwardBenchmarkFields'
 import { DEFINITIONS } from '../copy'
 import {
   DEFAULT_MEAN_REVERSION,
@@ -12,7 +21,7 @@ import {
   type MeanReversionParams,
   type MomentumParams,
 } from '../strategyMeta'
-import type { BacktestRequest, StrategyType } from '../types'
+import type { BacktestRequest, ConfigPreset, StrategyType } from '../types'
 
 const defaultForm = {
   symbols: 'SPY,QQQ',
@@ -24,7 +33,10 @@ const defaultForm = {
   max_portfolio_drawdown_pct: 20,
   slippage_bps: 5,
   commission_per_trade: 0,
+  run_name: '',
 }
+
+type FormState = typeof defaultForm
 
 export function ConfigurePage() {
   const navigate = useNavigate()
@@ -32,10 +44,27 @@ export function ConfigurePage() {
   const [strategyType, setStrategyType] = useState<StrategyType>('buy_and_hold')
   const [momentum, setMomentum] = useState<MomentumParams>(DEFAULT_MOMENTUM)
   const [meanRev, setMeanRev] = useState<MeanReversionParams>(DEFAULT_MEAN_REVERSION)
+  const [walkForward, setWalkForward] = useState<WalkForwardForm>(DEFAULT_WALK_FORWARD)
+  const [benchmark, setBenchmark] = useState<BenchmarkForm>(DEFAULT_BENCHMARK)
+  const [presets, setPresets] = useState<ConfigPreset[]>([])
+  const [presetName, setPresetName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [presetMsg, setPresetMsg] = useState<string | null>(null)
 
-  function update<K extends keyof typeof defaultForm>(key: K, value: (typeof defaultForm)[K]) {
+  function refreshPresets() {
+    listPresets()
+      .then(setPresets)
+      .catch(() => {
+        /* ignore — backend may be down until run */
+      })
+  }
+
+  useEffect(() => {
+    refreshPresets()
+  }, [])
+
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
@@ -57,6 +86,51 @@ export function ConfigurePage() {
     return { type: 'buy_and_hold' as const, symbols, params: {} }
   }
 
+  function snapshotConfig(): Record<string, unknown> {
+    return {
+      form,
+      strategyType,
+      momentum,
+      meanRev,
+      walkForward,
+      benchmark,
+    }
+  }
+
+  function applyPreset(preset: ConfigPreset) {
+    const c = preset.config as {
+      form?: FormState
+      strategyType?: StrategyType
+      momentum?: MomentumParams
+      meanRev?: MeanReversionParams
+      walkForward?: WalkForwardForm
+      benchmark?: BenchmarkForm
+    }
+    if (c.form) setForm({ ...defaultForm, ...c.form })
+    if (c.strategyType) setStrategyType(c.strategyType)
+    if (c.momentum) setMomentum(c.momentum)
+    if (c.meanRev) setMeanRev(c.meanRev)
+    if (c.walkForward) setWalkForward(c.walkForward)
+    if (c.benchmark) setBenchmark(c.benchmark)
+    setPresetMsg(`Loaded preset “${preset.name}”.`)
+  }
+
+  async function saveCurrentPreset() {
+    const name = presetName.trim()
+    if (!name) {
+      setError('Enter a preset name before saving.')
+      return
+    }
+    try {
+      await createPreset(name, snapshotConfig())
+      setPresetName('')
+      setPresetMsg(`Saved preset “${name}”.`)
+      refreshPresets()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
@@ -74,6 +148,9 @@ export function ConfigurePage() {
       }
       if (strategyType === 'momentum' && momentum.top_n > symbols.length) {
         throw new Error('Top N cannot be larger than the number of symbols.')
+      }
+      if (benchmark.enabled && !benchmark.symbol.trim()) {
+        throw new Error('Enter a benchmark symbol or turn the benchmark off.')
       }
       const body: BacktestRequest = {
         symbols,
@@ -93,6 +170,9 @@ export function ConfigurePage() {
           slippage_bps: Number(form.slippage_bps),
           commission_per_trade: Number(form.commission_per_trade),
         },
+        walk_forward: toWalkForwardPayload(walkForward),
+        benchmark: toBenchmarkPayload(benchmark),
+        name: form.run_name.trim() || null,
       }
       const result = await runBacktest(body)
       navigate(`/results/${result.id}`, { state: { result } })
@@ -118,8 +198,63 @@ export function ConfigurePage() {
 
       <form className="config-form" onSubmit={onSubmit}>
         <fieldset className="config-section">
+          <legend>Presets</legend>
+          <p className="section-lead">
+            <span className="label-row inline">
+              <span>Save or load this form’s settings</span>
+              <HelpTip definition={DEFINITIONS.presets} />
+            </span>
+          </p>
+          <div className="row preset-row">
+            <FieldLabel text="Preset name" definition={DEFINITIONS.preset_name}>
+              <input
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                placeholder="My momentum setup"
+                autoComplete="off"
+              />
+            </FieldLabel>
+            <div className="preset-actions">
+              <button type="button" className="btn-ghost" onClick={saveCurrentPreset}>
+                Save preset
+              </button>
+            </div>
+          </div>
+          {presets.length > 0 && (
+            <ul className="preset-list">
+              {presets.map((p) => (
+                <li key={p.id}>
+                  <button type="button" className="linkish" onClick={() => applyPreset(p)}>
+                    {p.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="linkish danger"
+                    onClick={async () => {
+                      await deletePreset(p.id)
+                      refreshPresets()
+                    }}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {presetMsg && <p className="hint">{presetMsg}</p>}
+        </fieldset>
+
+        <fieldset className="config-section">
           <legend>1 · Setup</legend>
           <p className="section-lead">What to buy, when to test, and how much cash to start with.</p>
+          <FieldLabel text="Run name (optional)" definition={DEFINITIONS.run_name}>
+            <input
+              value={form.run_name}
+              onChange={(e) => update('run_name', e.target.value)}
+              placeholder="Q1 momentum check"
+              autoComplete="off"
+            />
+          </FieldLabel>
           <FieldLabel text="Stocks / ETFs" definition={DEFINITIONS.symbols}>
             <input
               value={form.symbols}
@@ -412,6 +547,13 @@ export function ConfigurePage() {
           </p>
         </fieldset>
 
+        <WalkForwardBenchmarkFields
+          walkForward={walkForward}
+          setWalkForward={setWalkForward}
+          benchmark={benchmark}
+          setBenchmark={setBenchmark}
+        />
+
         {loading && (
           <div className="info-banner" role="status">
             Running your backtest… This usually takes a few seconds. Stay on this page.
@@ -431,6 +573,9 @@ export function ConfigurePage() {
           </button>
           <Link className="btn-ghost" to="/compare">
             Compare strategies
+          </Link>
+          <Link className="btn-ghost" to="/runs">
+            Saved runs
           </Link>
         </div>
       </form>

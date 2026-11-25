@@ -8,10 +8,12 @@ from typing import Optional
 import pandas as pd
 
 from app.data.adapter import DataAdapter
+from app.engine.benchmark import compute_benchmark_result
 from app.engine.metrics import compute_metrics
 from app.engine.portfolio import Portfolio
-from app.engine.risk import OrderIntent, RiskEngine
+from app.engine.risk import RiskEngine
 from app.engine.strategy import SignalBar, build_strategy
+from app.engine.walk_forward import build_walk_forward_result, no_oos_warning
 from app.models.schemas import (
     BacktestRequest,
     EquityPoint,
@@ -34,17 +36,32 @@ class BacktestRunner:
         self.data = data
 
     def run(self, request: BacktestRequest) -> dict:
+        symbols = list(set(request.symbols) | set(request.strategy.symbols))
+        if request.benchmark.enabled:
+            symbols = list(set(symbols) | {request.benchmark.symbol.upper()})
+
         ohlcv = self.data.get_ohlcv(
-            symbols=list(set(request.symbols) | set(request.strategy.symbols)),
+            symbols=symbols,
             start=request.start_date,
             end=request.end_date,
         )
-        trading_days = self._common_trading_days(ohlcv)
+
+        # Strategy calendar from universe/strategy symbols; intersect with
+        # benchmark when enabled so equity overlays share the same dates.
+        strat_syms = list(set(request.symbols) | set(request.strategy.symbols))
+        strat_ohlcv = {s: ohlcv[s] for s in strat_syms if s in ohlcv}
+        trading_days = self._common_trading_days(strat_ohlcv)
+        if request.benchmark.enabled:
+            bench_sym = request.benchmark.symbol.upper()
+            if bench_sym not in ohlcv:
+                raise ValueError(f"No market data for benchmark {bench_sym}")
+            bench_days = set(ohlcv[bench_sym].index.date)
+            trading_days = [d for d in trading_days if d in bench_days]
         if len(trading_days) < 2:
             raise ValueError("Need at least 2 trading days for next-open fills")
 
         strategy = build_strategy(request.strategy)
-        signals = strategy.generate_signals(ohlcv, trading_days)
+        signals = strategy.generate_signals(strat_ohlcv, trading_days)
         signal_map: dict[date, SignalBar] = {s.date: s for s in signals}
 
         risk = RiskEngine(request.guardrails, request.costs)
@@ -57,8 +74,8 @@ class BacktestRunner:
         prev_equity = request.initial_cash
 
         for i, day in enumerate(trading_days):
-            opens = self._prices(ohlcv, day, "open")
-            closes = self._prices(ohlcv, day, "close")
+            opens = self._prices(strat_ohlcv, day, "open")
+            closes = self._prices(strat_ohlcv, day, "close")
 
             # --- 1) Fill pending signals at today's open ---
             if pending is not None:
@@ -150,6 +167,31 @@ class BacktestRunner:
             equity_curve, trades, request.initial_cash, daily_returns
         )
 
+        walk_forward = None
+        warning = None
+        if request.walk_forward.enabled:
+            walk_forward = build_walk_forward_result(
+                request.walk_forward,
+                trading_days,
+                equity_curve,
+                trades,
+                daily_returns,
+                request.initial_cash,
+            )
+        else:
+            warning = no_oos_warning()
+
+        benchmark = None
+        if request.benchmark.enabled:
+            benchmark = compute_benchmark_result(
+                request.benchmark.symbol.upper(),
+                ohlcv,
+                trading_days,
+                request.initial_cash,
+                metrics,
+                request.benchmark,
+            )
+
         return {
             "equity_curve": equity_curve,
             "trades": trades,
@@ -157,6 +199,9 @@ class BacktestRunner:
             "daily_returns": daily_returns,
             "dd_halted": portfolio.dd_halted,
             "dd_halt_date": portfolio.dd_halt_date,
+            "walk_forward": walk_forward,
+            "benchmark": benchmark,
+            "no_oos_warning": warning,
         }
 
     @staticmethod

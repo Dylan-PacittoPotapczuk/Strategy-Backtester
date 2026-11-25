@@ -7,6 +7,7 @@ from datetime import date
 from app.data.adapter import FixtureDataAdapter
 from app.engine.runner import BacktestRunner
 from app.models.schemas import (
+    BenchmarkConfig,
     BacktestRequest,
     CostConfig,
     GuardrailConfig,
@@ -46,7 +47,8 @@ def test_buy_and_hold_fills_next_open_not_same_day(start: date) -> None:
             max_portfolio_drawdown_pct=0.99,
         ),
         costs=CostConfig(slippage_bps=0.0, commission_per_trade=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     buys = [
         t
@@ -78,7 +80,8 @@ def test_signal_on_last_day_has_no_fill(start: date) -> None:
             max_portfolio_drawdown_pct=0.99,
         ),
         costs=CostConfig(slippage_bps=0.0),
-    )
+            benchmark=BenchmarkConfig(enabled=False),
+        )
     result = BacktestRunner(adapter).run(req)
     buys = [t for t in result["trades"] if t.side == TradeSide.BUY and t.qty > 0]
     assert len(buys) == 1
