@@ -326,6 +326,12 @@ class CompareResponse(BaseModel):
     runs: list[BacktestResponse]
 
 
+class CompareExportRequest(BaseModel):
+    """Completed compare runs to turn into a CSV ZIP or PDF summary."""
+
+    runs: list[BacktestResponse] = Field(min_length=1)
+
+
 class RunSummary(BaseModel):
     """Lightweight recent-run row for the saved-runs list."""
 

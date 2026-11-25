@@ -1,0 +1,25 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SERVE_FRONTEND: "1"
+      STATIC_DIR: /app/static
+      # Optional: comma-separated extra browser origins if you put a CDN in front.
+      # CORS_ORIGINS: https://example.com
+    volumes:
+      # Persist SQLite runs + OHLCV cache across container restarts.
+      - sb-data:/app/backend/cache
+    # Yahoo Finance EOD needs outbound HTTPS. If your Docker bridge has no egress
+    # (some locked-down VMs), uncomment the next line on Linux:
+    # network_mode: host
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sb-data:

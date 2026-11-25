@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { runCompare } from '../api'
+import { ExportButtons } from '../components/ExportButtons'
 import { FieldLabel, HeadingWithHelp, HelpTip } from '../components/HelpTip'
 import {
   DEFAULT_BENCHMARK,
@@ -475,6 +476,8 @@ export function ComparePage() {
 
       {runs && runs.length > 0 && (
         <div className="compare-results">
+          <ExportButtons mode="compare" runs={runs} />
+
           <section className="results-section chart-block" aria-labelledby="compare-equity">
             <HeadingWithHelp
               as="h2"

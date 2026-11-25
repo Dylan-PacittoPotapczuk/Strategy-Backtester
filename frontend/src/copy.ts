@@ -124,6 +124,16 @@ export const DEFINITIONS = {
   presets:
     'Named snapshots of the Configure form (symbols, dates, strategy, risk, costs, walk-forward, benchmark). Load one to restore settings without retyping.',
   preset_name: 'What to call this saved setup so you can load it later.',
+  export_report:
+    'Save this run’s risk numbers to your computer — a spreadsheet pack (CSV) and a short printable summary (PDF).',
+  export_csv:
+    'Downloads a ZIP of CSV tables: headline metrics, day-by-day equity, every trade, and Monte Carlo summary bands when available.',
+  export_pdf:
+    'Downloads a simple one-page PDF with key metrics, a sketch of the equity curve, risk settings, and the test assumptions.',
+  export_compare_csv:
+    'Downloads a ZIP with a side-by-side metrics table plus equity and trade CSVs for each compared strategy.',
+  export_compare_pdf:
+    'Downloads a short PDF comparing return, risk-adjusted return, worst drop, and risk-rule counts across strategies.',
 } as const
 
 export type DefinitionKey = keyof typeof DEFINITIONS
